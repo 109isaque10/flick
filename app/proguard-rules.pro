@@ -1,44 +1,21 @@
-# === Keep Kotlin Metadata for Hilt/KSP ===
--keepattributes KotlinMetadata, RuntimeVisibleAnnotations, RuntimeInvisibleAnnotations
+# Add project specific ProGuard rules here.
+# You can control the set of applied configuration files using the
+# proguardFiles setting in build.gradle.
+#
+# For more details, see
+#   http://developer.android.com/guide/developing/tools/proguard.html
 
-# Keep Kotlin metadata for serialization
--keepattributes InnerClasses, EnclosingMethod
+# If your project uses WebView with JS, uncomment the following
+# and specify the fully qualified class name to the JavaScript interface
+# class:
+#-keepclassmembers class fqcn.of.javascript.interface.for.webview {
+#   public *;
+#}
 
-# Keep Hilt generated classes
--keep class dagger.hilt.** { *; }
--keep class * extends dagger.hilt.android.internal.managers.* { *; }
--keep class * implements dagger.hilt.internal.aggregatedroot.codegen.* { *; }
+# Uncomment this to preserve the line number information for
+# debugging stack traces.
+#-keepattributes SourceFile,LineNumberTable
 
--keep class javax.inject.** { *; }
--keep class javax.annotation.** { *; }
-
--keep class com.stremflix.**Hilt* { *; }
--keep class com.stremflix.Hilt_* { *; }
-
-# Keep Room entities and DAOs
--keep class com.stremflix.data.local.entity.** { *; }
--keep class com.stremflix.data.local.dao.** { *; }
--keepattributes Signature
-
--keep,allowobfuscation,allowshrinking @dagger.hilt.EntryPoint class *
--keep,allowobfuscation,allowshrinking @dagger.hilt.android.EarlyEntryPoint class *
-
-# Keep Kotlinx Serialization metadata
--keepattributes RuntimeVisibleAnnotations, RuntimeInvisibleAnnotations
--keepclassmembers class kotlinx.serialization.** { *; }
--keep class kotlinx.serialization.internal.** { *; }
-
-# Keep Compose compiler metadata
--keep class androidx.compose.** { *; }
--keepattributes RuntimeVisibleAnnotations, RuntimeInvisibleAnnotations
-
-# Keep ViewModel metadata for Hilt
--keep class * extends androidx.lifecycle.ViewModel { *; }
--keepclassmembers class * extends androidx.lifecycle.ViewModel {
-    <init>(...);
-}
-
--dontwarn androidx.window.extensions.area.ExtensionWindowAreaPresentation
--dontwarn androidx.window.extensions.core.util.function.Consumer
--dontwarn androidx.window.extensions.core.util.function.Function
--dontwarn androidx.window.extensions.core.util.function.Predicate
+# If you keep the line number information, uncomment this to
+# hide the original source file name.
+#-renamesourcefileattribute SourceFile
