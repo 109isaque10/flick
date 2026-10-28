@@ -10,7 +10,7 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
+
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -37,12 +37,16 @@ import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
@@ -211,6 +215,14 @@ fun SearchScreen(
         }
     } else {
         // TV 2-Pane Search Layout (image 8)
+        // Single requester for the first keyboard key ("Q"), used once so D-pad
+        // typing can begin immediately without navigating from the query bar.
+        val keyboardFocusRequester = remember { FocusRequester() }
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            runCatching { keyboardFocusRequester.requestFocus() }
+        }
+
         Row(
             modifier = modifier
                 .fillMaxSize()
@@ -243,6 +255,9 @@ fun SearchScreen(
                             shape = RoundedCornerShape(NetflixDimens.CardRadius)
                         )
                         .onFocusChanged { isSearchFocused = it.isFocused }
+                        // No-op click makes the bar a D-pad focus target so the
+                        // focus border above actually becomes reachable.
+                        .clickable { }
                         .padding(horizontal = 12.dp),
                     verticalAlignment = Alignment.CenterVertically
                 ) {
@@ -288,42 +303,55 @@ fun SearchScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // On-Screen TV Alphanumeric Keyboard Grid (6 columns)
-                val tvKeys = listOf(
-                    "A", "B", "C", "D", "E", "F",
-                    "G", "H", "I", "J", "K", "L",
-                    "M", "N", "O", "P", "Q", "R",
-                    "S", "T", "U", "V", "W", "X",
-                    "Y", "Z", "1", "2", "3", "4",
-                    "5", "6", "7", "8", "9", "0"
+                // QWERTY TV keyboard. Keys use a fixed height (~40dp) and share the
+                // row width by weight, so 10-key rows fit inside the 320dp pane.
+                // Rows 2 and 3 are inset with weighted spacers to look staggered
+                // while keeping key widths aligned with row 1.
+                val keyboardRows = listOf(
+                    listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
+                    listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
+                    listOf("Z", "X", "C", "V", "B", "N", "M"),
+                    listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
                 )
+                // Left/right inset per row, measured in key widths.
+                val keyboardInsets = listOf(0f, 0.5f, 1.5f, 0f)
+                val keyHeight = 40.dp
+                val keyShape = RoundedCornerShape(4.dp)
 
-                // Fixed 6-column grid. This used to be a LazyVerticalGrid inside a
-                // height-bounded Column, which clipped the bottom rows behind the
-                // space/backspace/clear buttons on short TV viewports.
                 Column(
                     modifier = Modifier.fillMaxWidth(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
-                    tvKeys.chunked(6).forEach { rowKeys ->
+                    keyboardRows.forEachIndexed { rowIndex, rowKeys ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            rowKeys.forEach { charKey ->
+                            val inset = keyboardInsets[rowIndex]
+                            if (inset > 0f) {
+                                Spacer(modifier = Modifier.weight(inset))
+                            }
+                            rowKeys.forEachIndexed { keyIndex, charKey ->
                                 var isKeyFocused by remember { mutableStateOf(false) }
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .aspectRatio(1f)
+                                        .height(keyHeight)
                                         .background(
                                             if (isKeyFocused) Color.White.copy(alpha = 0.25f) else NetflixDarkSurface,
-                                            RoundedCornerShape(4.dp)
+                                            keyShape
                                         )
                                         .border(
                                             width = if (isKeyFocused) 2.dp else 1.dp,
                                             color = if (isKeyFocused) NetflixBorderHighlight else Color.White.copy(alpha = 0.1f),
-                                            shape = RoundedCornerShape(4.dp)
+                                            shape = keyShape
+                                        )
+                                        .then(
+                                            if (rowIndex == 0 && keyIndex == 0) {
+                                                Modifier.focusRequester(keyboardFocusRequester)
+                                            } else {
+                                                Modifier
+                                            }
                                         )
                                         .onFocusChanged { isKeyFocused = it.isFocused }
                                         .clickable { onQueryChange(searchQuery + charKey.lowercase()) },
@@ -336,6 +364,9 @@ fun SearchScreen(
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
+                            }
+                            if (inset > 0f) {
+                                Spacer(modifier = Modifier.weight(inset))
                             }
                         }
                     }

@@ -46,9 +46,16 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
@@ -89,13 +96,14 @@ private fun RailItem(
     label: String,
     selected: Boolean,
     expanded: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(4.dp)
 
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(NetflixDimens.RailItemHeight)
             .padding(vertical = 2.dp)
@@ -150,6 +158,7 @@ private fun RailItem(
     }
 }
 
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun StremFlixNavRail(
     currentDestination: NavDestination,
@@ -158,18 +167,13 @@ fun StremFlixNavRail(
     modifier: Modifier = Modifier
 ) {
     var railHasFocus by remember { mutableStateOf(false) }
-    // On launch Compose parks the initial D-pad focus on the first focusable in
-    // the tree, which is this rail (home content is composed first but has no
-    // focusable until the hero loads). Expanding on that first focus made the
-    // app open with the sidebar already open. Focus is still accepted
-    // immediately - only the expansion animation waits for the hand-off to the
-    // hero, so a deliberate visit still expands normally.
-    var expansionArmed by remember { mutableStateOf(false) }
-    LaunchedEffect(Unit) {
-        delay(500)
-        expansionArmed = true
-    }
-    val isRailFocused = railHasFocus && expansionArmed
+    // A rail that merely inherited the initial focus (Compose parks D-pad focus
+    // on the first focusable while the hero is still loading) must not unfurl
+    // the sidebar on launch. It only expands when it was re-entered after having
+    // been left, or when the user actually pressed a key while inside it.
+    var railEngaged by remember { mutableStateOf(false) }
+    var sawFocusLoss by remember { mutableStateOf(false) }
+    val isRailFocused = railHasFocus && railEngaged
     val railWidth by animateDpAsState(
         targetValue = if (isRailFocused) NetflixDimens.RailWidthExpanded else NetflixDimens.RailWidthCollapsed,
         label = "railWidth"
@@ -188,12 +192,29 @@ fun StremFlixNavRail(
         )
     }
 
+    val focusRequesters = remember { List(destinations.size + 2) { FocusRequester() } }
+
     Box(
         modifier = modifier
             .width(railWidth)
             .fillMaxHeight()
             .statusBarsPadding()
-            .onFocusChanged { railHasFocus = it.hasFocus }
+            .onFocusChanged { state ->
+                if (state.hasFocus && !railHasFocus) {
+                    if (sawFocusLoss) railEngaged = true
+                } else if (!state.hasFocus && railHasFocus) {
+                    railEngaged = false
+                    sawFocusLoss = true
+                }
+                railHasFocus = state.hasFocus
+            }
+            // Vertical movement stays inside the sidebar; leaving it requires an
+            // explicit left/right, so DPAD_DOWN can never fall through onto the
+            // screen behind it.
+            .onPreviewKeyEvent { event ->
+                if (event.type == KeyEventType.KeyDown) railEngaged = true
+                false
+            }
             .background(
                 Brush.horizontalGradient(
                     colors = listOf(
@@ -248,13 +269,23 @@ fun StremFlixNavRail(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                destinations.forEach { dest ->
+                destinations.forEachIndexed { index, dest ->
                     RailItem(
                         icon = dest.icon,
                         label = stringResource(dest.labelRes),
                         selected = currentDestination == dest,
                         expanded = isRailFocused,
-                        onClick = { onDestinationSelected(dest) }
+                        onClick = { onDestinationSelected(dest) },
+                        modifier = Modifier
+                            .focusRequester(focusRequesters[index])
+                            .focusProperties {
+                                up = if (index == 0) {
+                                    FocusRequester.Cancel
+                                } else {
+                                    focusRequesters[index - 1]
+                                }
+                                down = focusRequesters[index + 1]
+                            }
                     )
                 }
             }
@@ -265,7 +296,13 @@ fun StremFlixNavRail(
                     label = stringResource(R.string.nav_settings),
                     selected = currentDestination == NavDestination.SETTINGS,
                     expanded = isRailFocused,
-                    onClick = { onDestinationSelected(NavDestination.SETTINGS) }
+                    onClick = { onDestinationSelected(NavDestination.SETTINGS) },
+                    modifier = Modifier
+                        .focusRequester(focusRequesters[destinations.size])
+                        .focusProperties {
+                            up = focusRequesters[destinations.lastIndex]
+                            down = focusRequesters[destinations.size + 1]
+                        }
                 )
 
                 var reloadFocused by remember { mutableStateOf(false) }
@@ -283,6 +320,11 @@ fun StremFlixNavRail(
                             shape = shape
                         )
                         .onFocusChanged { reloadFocused = it.isFocused }
+                        .focusRequester(focusRequesters[destinations.size + 1])
+                        .focusProperties {
+                            up = focusRequesters[destinations.size]
+                            down = FocusRequester.Cancel
+                        }
                         .clickable {
                             onReloadRequested()
                             (context as? Activity)?.recreate()

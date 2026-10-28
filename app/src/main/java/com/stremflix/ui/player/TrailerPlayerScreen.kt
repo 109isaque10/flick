@@ -4,6 +4,7 @@ import android.net.Uri
 import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,13 +33,17 @@ import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -79,9 +84,15 @@ fun TrailerPlayerScreen(
     var positionMs by remember { mutableLongStateOf(0L) }
     var durationMs by remember { mutableLongStateOf(0L) }
 
-    // Any remote-key press reveals the controls; nothing else is bound.
+    // Any remote key reveals the controls; nothing else is bound.
     var controlsVisible by remember { mutableStateOf(true) }
     var interactionTick by remember { mutableStateOf(0) }
+
+    // Focus has to live somewhere at all times. The controls leave composition
+    // when they hide, so a dedicated sink keeps the D-pad events arriving here
+    // instead of dead-ending on an unfocused screen.
+    val playPauseRequester = remember { FocusRequester() }
+    val focusSink = remember { FocusRequester() }
 
     BackHandler(onBack = onBack)
 
@@ -147,20 +158,27 @@ fun TrailerPlayerScreen(
         }
     }
 
-    // The play/pause button stays composed (and focused) even while the overlay
-    // is hidden, so remote keys keep arriving here instead of dead-ending.
+    LaunchedEffect(controlsVisible) {
+        withFrameNanos { }
+        runCatching {
+            if (controlsVisible) playPauseRequester.requestFocus() else focusSink.requestFocus()
+        }
+    }
+
     Box(
         modifier = Modifier
             .fillMaxSize()
             .background(NetflixBlack)
             .onPreviewKeyEvent { event ->
                 if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                interactionTick++
                 if (!controlsVisible) {
+                    // First press only surfaces the overlay; it must not also
+                    // activate whatever button happens to be under it.
                     controlsVisible = true
-                    interactionTick++
                     true
                 } else {
-                    interactionTick++
+                    // Let the focused control handle OK / arrows normally.
                     false
                 }
             }
@@ -178,16 +196,17 @@ fun TrailerPlayerScreen(
             modifier = Modifier.fillMaxSize()
         )
 
-        // Tapping the video toggles the overlay.
+        // Tapping the video toggles the overlay. This is pointer-only: making
+        // the full-screen layer focusable let it steal D-pad focus from the
+        // play/pause button.
         Box(
             modifier = Modifier
                 .fillMaxSize()
-                .clickable(
-                    interactionSource = remember { MutableInteractionSource() },
-                    indication = null
-                ) {
-                    controlsVisible = !controlsVisible
-                    interactionTick++
+                .pointerInput(Unit) {
+                    detectTapGestures {
+                        controlsVisible = !controlsVisible
+                        interactionTick++
+                    }
                 }
         )
 
@@ -202,75 +221,93 @@ fun TrailerPlayerScreen(
             )
         }
 
-        Column(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .background(
-                    Brush.verticalGradient(
-                        listOf(Color.Transparent, NetflixBlack.copy(alpha = 0.85f))
+        if (controlsVisible) {
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .background(
+                        Brush.verticalGradient(
+                            listOf(Color.Transparent, NetflixBlack.copy(alpha = 0.85f))
+                        )
                     )
-                )
-                .padding(horizontal = 28.dp, vertical = 20.dp)
-        ) {
-            if (title.isNotBlank()) {
-                Text(
-                    text = title,
-                    color = NetflixWhite,
-                    fontSize = 14.sp,
-                    fontWeight = FontWeight.Bold,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-                Spacer(modifier = Modifier.height(10.dp))
-            }
+                    .padding(horizontal = 28.dp, vertical = 20.dp)
+            ) {
+                if (title.isNotBlank()) {
+                    Text(
+                        text = title,
+                        color = NetflixWhite,
+                        fontSize = 14.sp,
+                        fontWeight = FontWeight.Bold,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                }
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                IconButton(
-                    onClick = {
-                        if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    IconButton(
+                        onClick = {
+                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                            interactionTick++
+                        },
+                        modifier = Modifier
+                            .size(48.dp)
+                            .focusRequester(playPauseRequester)
+                    ) {
+                        when {
+                            isBuffering -> CircularProgressIndicator(
+                                color = NetflixWhite,
+                                strokeWidth = 2.dp,
+                                modifier = Modifier.size(22.dp)
+                            )
+
+                            else -> Icon(
+                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                contentDescription = stringResource(
+                                    if (isPlaying) R.string.action_pause else R.string.action_play
+                                ),
+                                tint = NetflixWhite,
+                                modifier = Modifier.size(28.dp)
+                            )
+                        }
+                    }
+
+                    Spacer(modifier = Modifier.width(14.dp))
+
+                    // Read-only progress: trailers are not resumable, so no seeking.
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(4.dp)
+                            .background(NetflixLightGray.copy(alpha = 0.35f), RoundedCornerShape(2.dp))
+                    ) {
+                        if (durationMs > 0L) {
+                            val fraction = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
+                            Box(
+                                modifier = Modifier
+                                    .fillMaxWidth(fraction)
+                                    .fillMaxHeight()
+                                    .background(NetflixRed, RoundedCornerShape(2.dp))
+                            )
+                        }
+                    }
+                }
+            }
+        } else {
+            // Invisible focus target for the hidden-controls state.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRequester(focusSink)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        controlsVisible = true
                         interactionTick++
-                    },
-                    modifier = Modifier.size(48.dp)
-                ) {
-                    when {
-                        isBuffering -> CircularProgressIndicator(
-                            color = NetflixWhite,
-                            strokeWidth = 2.dp,
-                            modifier = Modifier.size(22.dp)
-                        )
-
-                        else -> Icon(
-                            imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                            contentDescription = stringResource(
-                                if (isPlaying) R.string.action_pause else R.string.action_play
-                            ),
-                            tint = NetflixWhite,
-                            modifier = Modifier.size(28.dp)
-                        )
                     }
-                }
-
-                Spacer(modifier = Modifier.width(14.dp))
-
-                // Read-only progress: trailers are not resumable, so no seeking.
-                Box(
-                    modifier = Modifier
-                        .weight(1f)
-                        .height(4.dp)
-                        .background(NetflixLightGray.copy(alpha = 0.35f), RoundedCornerShape(2.dp))
-                ) {
-                    if (durationMs > 0L) {
-                        val fraction = (positionMs.toFloat() / durationMs.toFloat()).coerceIn(0f, 1f)
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth(fraction)
-                                .fillMaxHeight()
-                                .background(NetflixRed, RoundedCornerShape(2.dp))
-                        )
-                    }
-                }
-            }
+            )
         }
     }
 }

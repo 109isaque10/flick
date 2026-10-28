@@ -396,10 +396,19 @@ fun PlayerScreen(
     // The overlay (and its focus targets) is removed while the controls are
     // hidden, so focus has to be parked back on a control when they reappear.
     val controlsFocusRequester = remember { FocusRequester() }
-    LaunchedEffect(isControlsVisible) {
-        if (isControlsVisible) {
-            withFrameNanos { }
-            runCatching { controlsFocusRequester.requestFocus() }
+    // The overlay is removed from composition while it is hidden (or while a
+    // playback error is shown), which used to drop D-pad focus entirely: no
+    // node was focused, so remote keys (including OK) never reached this screen.
+    // This sink is composed whenever the overlay is unavailable and restores it.
+    val playerFocusSink = remember { FocusRequester() }
+    LaunchedEffect(isControlsVisible, playerError) {
+        withFrameNanos { }
+        runCatching {
+            if (isControlsVisible && playerError == null) {
+                controlsFocusRequester.requestFocus()
+            } else {
+                playerFocusSink.requestFocus()
+            }
         }
     }
 
@@ -652,6 +661,23 @@ fun PlayerScreen(
             }
         }
 
+        // Focus holder whenever the visible overlay is unavailable. It cannot
+        // steal focus from the overlay because it only exists in that state.
+        if (!isControlsVisible || playerError != null) {
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .focusRequester(playerFocusSink)
+                    .clickable(
+                        interactionSource = remember { MutableInteractionSource() },
+                        indication = null
+                    ) {
+                        isControlsVisible = !isControlsVisible
+                        lastInteractionTime = System.currentTimeMillis()
+                    }
+            )
+        }
+
         // Loading Spinner (When controls are hidden)
         if (isBuffering && !isControlsVisible) {
             CircularProgressIndicator(
@@ -702,7 +728,6 @@ fun PlayerScreen(
                                 onBack()
                             },
                             modifier = Modifier
-                                .focusRequester(controlsFocusRequester)
                                 .background(
                                     if (backFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
                                     CircleShape
@@ -766,97 +791,98 @@ fun PlayerScreen(
                 if (!showUpNextPopup) {
                     Row(
                         modifier = Modifier.align(Alignment.Center),
-                    horizontalArrangement = Arrangement.spacedBy(48.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    var rewFocused by remember { mutableStateOf(false) }
-                    IconButton(
-                        onClick = {
-                            exoPlayer?.seekTo((currentPosition - 10000).coerceAtLeast(0L))
-                            lastInteractionTime = System.currentTimeMillis()
-                        },
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                if (rewFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
-                                CircleShape
-                            )
-                            .border(if (rewFocused) 2.dp else 0.dp, NetflixWhite, CircleShape)
-                            .onFocusChanged {
-                                rewFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
-                                System.currentTimeMillis()
-                            }
+                        horizontalArrangement = Arrangement.spacedBy(48.dp),
+                        verticalAlignment = Alignment.CenterVertically
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Replay10,
-                            contentDescription = stringResource(R.string.action_rewind_10s),
-                            tint = NetflixWhite,
-                            modifier = Modifier.size(44.dp)
-                        )
-                    }
-
-                    var playFocused by remember { mutableStateOf(false) }
-                    Box(
-                        modifier = Modifier
-                            .size(76.dp)
-                            .background(NetflixBlack.copy(alpha = 0.35f), CircleShape)
-                            .border(if (playFocused) 3.dp else 0.dp, NetflixWhite, CircleShape)
-                            .onFocusChanged {
-                                playFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
-                                System.currentTimeMillis()
-                            }
-                            .clickable {
-                                exoPlayer?.let {
-                                    if (it.isPlaying) it.pause() else it.play()
-                                }
+                        var rewFocused by remember { mutableStateOf(false) }
+                        IconButton(
+                            onClick = {
+                                exoPlayer?.seekTo((currentPosition - 10000).coerceAtLeast(0L))
                                 lastInteractionTime = System.currentTimeMillis()
                             },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isBuffering) {
-                            CircularProgressIndicator(
-                                color = NetflixWhite,
-                                modifier = Modifier.size(52.dp),
-                                strokeWidth = 3.dp
-                            )
-                        } else {
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    if (rewFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                                    CircleShape
+                                )
+                                .border(if (rewFocused) 2.dp else 0.dp, NetflixWhite, CircleShape)
+                                .onFocusChanged {
+                                    rewFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
+                                    System.currentTimeMillis()
+                                }
+                        ) {
                             Icon(
-                                imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
-                                contentDescription = if (isPlaying) stringResource(R.string.action_pause) else stringResource(
-                                    R.string.action_play
-                                ),
+                                imageVector = Icons.Default.Replay10,
+                                contentDescription = stringResource(R.string.action_rewind_10s),
                                 tint = NetflixWhite,
-                                modifier = Modifier.size(56.dp)
+                                modifier = Modifier.size(44.dp)
+                            )
+                        }
+
+                        var playFocused by remember { mutableStateOf(false) }
+                        Box(
+                            modifier = Modifier
+                                .size(76.dp)
+                                .background(NetflixBlack.copy(alpha = 0.35f), CircleShape)
+                                .border(if (playFocused) 3.dp else 0.dp, NetflixWhite, CircleShape)
+                                .onFocusChanged {
+                                    playFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
+                                    System.currentTimeMillis()
+                                }
+                                .focusRequester(controlsFocusRequester)
+                                .clickable {
+                                    exoPlayer?.let {
+                                        if (it.isPlaying) it.pause() else it.play()
+                                    }
+                                    lastInteractionTime = System.currentTimeMillis()
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            if (isBuffering) {
+                                CircularProgressIndicator(
+                                    color = NetflixWhite,
+                                    modifier = Modifier.size(52.dp),
+                                    strokeWidth = 3.dp
+                                )
+                            } else {
+                                Icon(
+                                    imageVector = if (isPlaying) Icons.Default.Pause else Icons.Default.PlayArrow,
+                                    contentDescription = if (isPlaying) stringResource(R.string.action_pause) else stringResource(
+                                        R.string.action_play
+                                    ),
+                                    tint = NetflixWhite,
+                                    modifier = Modifier.size(56.dp)
+                                )
+                            }
+                        }
+
+                        var fwdFocused by remember { mutableStateOf(false) }
+                        IconButton(
+                            onClick = {
+                                exoPlayer?.seekTo((currentPosition + 10000).coerceAtMost(duration))
+                                lastInteractionTime = System.currentTimeMillis()
+                            },
+                            modifier = Modifier
+                                .size(56.dp)
+                                .background(
+                                    if (fwdFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
+                                    CircleShape
+                                )
+                                .border(if (fwdFocused) 2.dp else 0.dp, NetflixWhite, CircleShape)
+                                .onFocusChanged {
+                                    fwdFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
+                                    System.currentTimeMillis()
+                                }
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Forward10,
+                                contentDescription = stringResource(R.string.action_forward_10s),
+                                tint = NetflixWhite,
+                                modifier = Modifier.size(44.dp)
                             )
                         }
                     }
-
-                    var fwdFocused by remember { mutableStateOf(false) }
-                    IconButton(
-                        onClick = {
-                            exoPlayer?.seekTo((currentPosition + 10000).coerceAtMost(duration))
-                            lastInteractionTime = System.currentTimeMillis()
-                        },
-                        modifier = Modifier
-                            .size(56.dp)
-                            .background(
-                                if (fwdFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
-                                CircleShape
-                            )
-                            .border(if (fwdFocused) 2.dp else 0.dp, NetflixWhite, CircleShape)
-                            .onFocusChanged {
-                                fwdFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
-                                System.currentTimeMillis()
-                            }
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Forward10,
-                            contentDescription = stringResource(R.string.action_forward_10s),
-                            tint = NetflixWhite,
-                            modifier = Modifier.size(44.dp)
-                        )
-                    }
-                }
 
                 }
 

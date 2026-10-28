@@ -8,6 +8,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -25,6 +27,8 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.platform.LocalContext
 import com.stremflix.data.local.SettingsDataStore
 import com.stremflix.data.local.StremFlixDatabase
@@ -54,8 +58,13 @@ import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixDimens
 import com.stremflix.ui.theme.StremFlixTheme
 import com.stremflix.ui.theme.isCompactScreen
+import kotlinx.coroutines.async
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+
+/** Poster grid cap for TV search; the extra rows were never reachable by D-pad. */
+private const val SEARCH_RESULT_LIMIT = 40
 
 class MainActivity : ComponentActivity() {
 
@@ -185,6 +194,12 @@ fun MainAppContent(
     // Search Data
     var searchQuery by remember { mutableStateOf("") }
     var searchResults by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
+    var lastSearchQuery by remember { mutableStateOf<String?>(null) }
+
+    // Landing target for D-pad focus after a sidebar selection, so the rail
+    // collapses instead of staying open over the screen.
+    val contentFocusRequester = remember { FocusRequester() }
+    val contentInteractionSource = remember { MutableInteractionSource() }
 
     // Categories Data
     val sampleGenres = remember {
@@ -209,11 +224,18 @@ fun MainAppContent(
     var categoryItems by remember { mutableStateOf<List<MediaItem>>(emptyList()) }
     var isCategoryLoading by remember { mutableStateOf(false) }
 
-    LaunchedEffect(selectedGenre) {
-        selectedGenre?.let { genre ->
-            isCategoryLoading = true
-            categoryItems = mediaRepository.getMediaByGenre(genre.id)
-            isCategoryLoading = false
+    LaunchedEffect(selectedGenre, currentNavDestination) {
+        // Categories costs two discover requests; it must not run while the user
+        // is still on Home, and its results are dropped when the tab is left so
+        // the TV does not keep a second full catalogue in memory.
+        if (currentNavDestination == NavDestination.CATEGORIES) {
+            selectedGenre?.let { genre ->
+                isCategoryLoading = true
+                categoryItems = mediaRepository.getMediaByGenre(genre.id)
+                isCategoryLoading = false
+            }
+        } else {
+            categoryItems = emptyList()
         }
     }
 
@@ -306,8 +328,14 @@ fun MainAppContent(
     // New & Popular duplicates several home requests, so it is only loaded
     // when its tab is actually opened.
     LaunchedEffect(currentNavDestination, tmdbApiKey, tmdbLanguage, tmdbRegion, traktApiKey) {
-        if (currentNavDestination == NavDestination.NEW_POPULAR && newAndPopularRows.isEmpty()) {
-            newAndPopularRows = mediaRepository.getNewAndPopularContentRows()
+        if (currentNavDestination == NavDestination.NEW_POPULAR) {
+            if (newAndPopularRows.isEmpty()) {
+                newAndPopularRows = mediaRepository.getNewAndPopularContentRows()
+            }
+        } else {
+            // These rows duplicate most of Home; keeping them alive after the tab
+            // is left wastes TV memory for no benefit.
+            newAndPopularRows = emptyList()
         }
     }
 
@@ -315,9 +343,15 @@ fun MainAppContent(
     LaunchedEffect(searchQuery) {
         val query = searchQuery
         if (query.isNotBlank()) {
-            delay(350)
-            searchResults = mediaRepository.searchMedia(query)
+            delay(400)
+            // The TV keyboard fires one change per key, so identical consecutive
+            // queries (e.g. spaces trimmed by the field) reuse the last payload.
+            if (query != lastSearchQuery) {
+                lastSearchQuery = query
+                searchResults = mediaRepository.searchMedia(query).take(SEARCH_RESULT_LIMIT)
+            }
         } else {
+            lastSearchQuery = null
             searchResults = emptyList()
         }
     }
@@ -326,20 +360,27 @@ fun MainAppContent(
     LaunchedEffect(selectedMediaItem?.id, selectedMediaItem?.mediaType) {
         selectedMediaItem?.let { item ->
             if (item.mediaType == "tv") {
-                val seasons = mediaRepository.getTvSeasons(item.id)
-                tvSeasons = seasons
-                val firstSeason = seasons.firstOrNull { it.seasonNumber > 0 } ?: seasons.firstOrNull()
-                selectedSeason = firstSeason
-                if (firstSeason != null) {
-                    seasonEpisodes = mediaRepository.getSeasonEpisodes(item.id, firstSeason.seasonNumber)
+                // Seasons and the enriched detail are independent calls; running
+                // them in parallel halves the wait before the page is usable.
+                coroutineScope {
+                    val seasonsDeferred = async { mediaRepository.getTvSeasons(item.id) }
+                    val updatedDeferred = async {
+                        mediaRepository.getMediaDetailsWithRatings(item.id, item.mediaType, item)
+                    }
+                    val seasons = seasonsDeferred.await()
+                    tvSeasons = seasons
+                    val firstSeason = seasons.firstOrNull { it.seasonNumber > 0 } ?: seasons.firstOrNull()
+                    selectedSeason = firstSeason
+                    if (firstSeason != null) {
+                        seasonEpisodes = mediaRepository.getSeasonEpisodes(item.id, firstSeason.seasonNumber)
+                    }
+                    selectedMediaItem = updatedDeferred.await()
                 }
             } else {
                 tvSeasons = emptyList()
                 seasonEpisodes = emptyList()
+                selectedMediaItem = mediaRepository.getMediaDetailsWithRatings(item.id, item.mediaType, item)
             }
-
-            val updatedItem = mediaRepository.getMediaDetailsWithRatings(item.id, item.mediaType, item)
-            selectedMediaItem = updatedItem
         }
     }
 
@@ -645,191 +686,193 @@ fun MainAppContent(
             val isMobileLayout = isCompactScreen()
 
             val screenContent: @Composable () -> Unit = {
-                Crossfade(targetState = currentNavDestination, label = "screenCrossfade") { dest ->
-                    when (dest) {
-                        NavDestination.HOME -> {
-                            HomeScreen(
-                                contentRows = contentRows,
-                                heroItem = heroItem,
-                                onMediaSelected = { selectedMediaItem = it },
-                                onPlayClicked = { item -> playMediaStream(item) },
-                                isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
-                                onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
-                                onSelectFilter = handleFilterSelection,
-                                activeFilter = "All",
-                                onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
-                                showFilterChips = true
-                            )
-                        }
+                // A plain `when` (rather than Crossfade) keeps exactly one screen
+                // composed: on TV the outgoing screen's posters and rows are
+                // released immediately instead of lingering through a fade.
+                val dest = currentNavDestination
+                when (dest) {
+                    NavDestination.HOME -> {
+                        HomeScreen(
+                            contentRows = contentRows,
+                            heroItem = heroItem,
+                            onMediaSelected = { selectedMediaItem = it },
+                            onPlayClicked = { item -> playMediaStream(item) },
+                            isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
+                            onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
+                            onSelectFilter = handleFilterSelection,
+                            activeFilter = "All",
+                            onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
+                            showFilterChips = true
+                        )
+                    }
 
-                        NavDestination.NEW_POPULAR -> {
-                            HomeScreen(
-                                contentRows = if (newAndPopularRows.isNotEmpty()) newAndPopularRows else contentRows,
-                                heroItem = newAndPopularRows.firstOrNull()?.items?.firstOrNull() ?: heroItem,
-                                onMediaSelected = { selectedMediaItem = it },
-                                onPlayClicked = { item -> playMediaStream(item) },
-                                isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
-                                onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
-                                onSelectFilter = handleFilterSelection,
-                                activeFilter = "NewPopular",
-                                onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
-                                showFilterChips = true
-                            )
-                        }
+                    NavDestination.NEW_POPULAR -> {
+                        HomeScreen(
+                            contentRows = if (newAndPopularRows.isNotEmpty()) newAndPopularRows else contentRows,
+                            heroItem = newAndPopularRows.firstOrNull()?.items?.firstOrNull() ?: heroItem,
+                            onMediaSelected = { selectedMediaItem = it },
+                            onPlayClicked = { item -> playMediaStream(item) },
+                            isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
+                            onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
+                            onSelectFilter = handleFilterSelection,
+                            activeFilter = "NewPopular",
+                            onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
+                            showFilterChips = true
+                        )
+                    }
 
-                        NavDestination.MOVIES -> {
-                            val movieRows =
-                                contentRows.filter { it.id == "popular_movies" || it.id == "action_adventure" }
-                            HomeScreen(
-                                contentRows = if (movieRows.isNotEmpty()) movieRows else contentRows,
-                                heroItem = contentRows.firstOrNull { it.id == "popular_movies" }?.items?.firstOrNull()
-                                    ?: heroItem,
-                                onMediaSelected = { selectedMediaItem = it },
-                                onPlayClicked = { item -> playMediaStream(item) },
-                                isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
-                                onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
-                                onSelectFilter = handleFilterSelection,
-                                activeFilter = "Movies",
-                                onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
-                                showFilterChips = true
-                            )
-                        }
+                    NavDestination.MOVIES -> {
+                        val movieRows =
+                            contentRows.filter { it.id == "popular_movies" || it.id == "action_adventure" }
+                        HomeScreen(
+                            contentRows = if (movieRows.isNotEmpty()) movieRows else contentRows,
+                            heroItem = contentRows.firstOrNull { it.id == "popular_movies" }?.items?.firstOrNull()
+                                ?: heroItem,
+                            onMediaSelected = { selectedMediaItem = it },
+                            onPlayClicked = { item -> playMediaStream(item) },
+                            isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
+                            onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
+                            onSelectFilter = handleFilterSelection,
+                            activeFilter = "Movies",
+                            onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
+                            showFilterChips = true
+                        )
+                    }
 
-                        NavDestination.TV_SHOWS -> {
-                            val tvRows = contentRows.filter { it.id == "bingeworthy_tv" }
-                            HomeScreen(
-                                contentRows = if (tvRows.isNotEmpty()) tvRows else contentRows,
-                                heroItem = contentRows.firstOrNull { it.id == "bingeworthy_tv" }?.items?.firstOrNull()
-                                    ?: heroItem,
-                                onMediaSelected = { selectedMediaItem = it },
-                                onPlayClicked = { item -> playMediaStream(item) },
-                                isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
-                                onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
-                                onSelectFilter = handleFilterSelection,
-                                activeFilter = "TV Shows",
-                                onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
-                                showFilterChips = true
-                            )
-                        }
+                    NavDestination.TV_SHOWS -> {
+                        val tvRows = contentRows.filter { it.id == "bingeworthy_tv" }
+                        HomeScreen(
+                            contentRows = if (tvRows.isNotEmpty()) tvRows else contentRows,
+                            heroItem = contentRows.firstOrNull { it.id == "bingeworthy_tv" }?.items?.firstOrNull()
+                                ?: heroItem,
+                            onMediaSelected = { selectedMediaItem = it },
+                            onPlayClicked = { item -> playMediaStream(item) },
+                            isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
+                            onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
+                            onSelectFilter = handleFilterSelection,
+                            activeFilter = "TV Shows",
+                            onSearchClicked = { currentNavDestination = NavDestination.SEARCH },
+                            showFilterChips = true
+                        )
+                    }
 
-                        NavDestination.MY_LIST -> {
-                            val myListRows = listOf(
-                                ContentRow(
-                                    id = "my_watchlist",
-                                    title = "",
-                                    titleRes = R.string.row_my_list,
-                                    items = savedWatchlist
-                                )
+                    NavDestination.MY_LIST -> {
+                        val myListRows = listOf(
+                            ContentRow(
+                                id = "my_watchlist",
+                                title = "",
+                                titleRes = R.string.row_my_list,
+                                items = savedWatchlist
                             )
-                            HomeScreen(
-                                contentRows = myListRows,
-                                heroItem = savedWatchlist.firstOrNull(),
-                                onMediaSelected = { selectedMediaItem = it },
-                                onPlayClicked = { item -> playMediaStream(item) },
-                                isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
-                                onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
-                                onSearchClicked = { currentNavDestination = NavDestination.SEARCH }
-                            )
-                        }
+                        )
+                        HomeScreen(
+                            contentRows = myListRows,
+                            heroItem = savedWatchlist.firstOrNull(),
+                            onMediaSelected = { selectedMediaItem = it },
+                            onPlayClicked = { item -> playMediaStream(item) },
+                            isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
+                            onNavigateToSettings = { currentNavDestination = NavDestination.SETTINGS },
+                            onSearchClicked = { currentNavDestination = NavDestination.SEARCH }
+                        )
+                    }
 
-                        NavDestination.SEARCH -> {
-                            SearchScreen(
-                                searchQuery = searchQuery,
-                                onQueryChange = { searchQuery = it },
-                                searchResults = searchResults,
-                                onMediaSelected = { selectedMediaItem = it }
-                            )
-                        }
+                    NavDestination.SEARCH -> {
+                        SearchScreen(
+                            searchQuery = searchQuery,
+                            onQueryChange = { searchQuery = it },
+                            searchResults = searchResults,
+                            onMediaSelected = { selectedMediaItem = it }
+                        )
+                    }
 
-                        NavDestination.CATEGORIES -> {
-                            CategoriesScreen(
-                                genres = sampleGenres,
-                                selectedGenre = selectedGenre,
-                                onGenreSelected = { selectedGenre = it },
-                                categoryItems = categoryItems,
-                                isLoading = isCategoryLoading,
-                                onMediaSelected = { selectedMediaItem = it }
-                            )
-                        }
+                    NavDestination.CATEGORIES -> {
+                        CategoriesScreen(
+                            genres = sampleGenres,
+                            selectedGenre = selectedGenre,
+                            onGenreSelected = { selectedGenre = it },
+                            categoryItems = categoryItems,
+                            isLoading = isCategoryLoading,
+                            onMediaSelected = { selectedMediaItem = it }
+                        )
+                    }
 
-                        NavDestination.SETTINGS -> {
-                            SettingsScreen(
-                                tmdbApiKey = tmdbApiKey,
-                                onSaveTmdbApiKey = { key ->
-                                    coroutineScope.launch { settingsDataStore.saveTmdbApiKey(key) }
-                                },
-                                tmdbLanguage = tmdbLanguage,
-                                onSaveTmdbLanguage = { lang ->
-                                    coroutineScope.launch { settingsDataStore.saveTmdbLanguage(lang) }
-                                },
-                                tmdbRegion = tmdbRegion,
-                                onSaveTmdbRegion = { reg ->
-                                    coroutineScope.launch { settingsDataStore.saveTmdbRegion(reg) }
-                                },
-                                stremioAddonUrl = stremioAddonUrl,
-                                onSaveStremioAddonUrl = { url ->
-                                    coroutineScope.launch { settingsDataStore.saveStremioAddonUrl(url) }
-                                },
-                                omdbApiKey = omdbApiKey,
-                                onSaveOmdbApiKey = { key ->
-                                    coroutineScope.launch { settingsDataStore.saveOmdbApiKey(key) }
-                                },
-                                youtubeBackendUrl = youtubeBackendUrl,
-                                onSaveYoutubeBackendUrl = { url ->
-                                    coroutineScope.launch { settingsDataStore.saveYoutubeBackendUrl(url) }
-                                },
-                                selectedProviders = selectedRatingProviders,
-                                onToggleProvider = { provider ->
-                                    val updated = if (selectedRatingProviders.contains(provider)) {
-                                        selectedRatingProviders - provider
-                                    } else {
-                                        selectedRatingProviders + provider
-                                    }
-                                    coroutineScope.launch { settingsDataStore.setRatingProviders(updated) }
-                                },
-                                stremioIdStrategy = stremioIdStrategy,
-                                onSelectStremioStrategy = { strat ->
-                                    coroutineScope.launch { settingsDataStore.setStremioIdStrategy(strat) }
-                                },
-                                completionThreshold = completionThreshold,
-                                onSaveCompletionThreshold = { pct ->
-                                    coroutineScope.launch { settingsDataStore.saveCompletionThreshold(pct) }
-                                },
-                                upNextThreshold = upNextThreshold,
-                                onSaveUpNextThreshold = { pct ->
-                                    coroutineScope.launch { settingsDataStore.saveUpNextThreshold(pct) }
-                                },
-                                traktApiKey = traktApiKey,
-                                onSaveTraktApiKey = { key ->
-                                    coroutineScope.launch { settingsDataStore.saveTraktApiKey(key) }
-                                },
-                                traktClientSecret = traktClientSecret,
-                                onSaveTraktClientSecret = { secret ->
-                                    coroutineScope.launch { settingsDataStore.saveTraktClientSecret(secret) }
-                                },
-                                traktUsername = traktUsername,
-                                traktDeviceCode = traktDeviceCode,
-                                traktVerificationUrl = traktVerificationUrl,
-                                onRequestTraktPairing = {
-                                    coroutineScope.launch {
-                                        val res = traktRepository.requestDeviceCode()
-                                        traktDeviceCode = res?.userCode
-                                        traktVerificationUrl = res?.verificationUrl
-                                        if (res != null) {
-                                            // Poll until the user approves (or the code expires);
-                                            // success lands in the settings flows.
-                                            traktRepository.startDeviceAuthPolling(
-                                                deviceCode = res.deviceCode,
-                                                intervalSeconds = res.interval
-                                            )
-                                        }
-                                    }
-                                },
-                                onDisconnectTrakt = {
-                                    coroutineScope.launch { traktRepository.disconnectTrakt() }
+                    NavDestination.SETTINGS -> {
+                        SettingsScreen(
+                            tmdbApiKey = tmdbApiKey,
+                            onSaveTmdbApiKey = { key ->
+                                coroutineScope.launch { settingsDataStore.saveTmdbApiKey(key) }
+                            },
+                            tmdbLanguage = tmdbLanguage,
+                            onSaveTmdbLanguage = { lang ->
+                                coroutineScope.launch { settingsDataStore.saveTmdbLanguage(lang) }
+                            },
+                            tmdbRegion = tmdbRegion,
+                            onSaveTmdbRegion = { reg ->
+                                coroutineScope.launch { settingsDataStore.saveTmdbRegion(reg) }
+                            },
+                            stremioAddonUrl = stremioAddonUrl,
+                            onSaveStremioAddonUrl = { url ->
+                                coroutineScope.launch { settingsDataStore.saveStremioAddonUrl(url) }
+                            },
+                            omdbApiKey = omdbApiKey,
+                            onSaveOmdbApiKey = { key ->
+                                coroutineScope.launch { settingsDataStore.saveOmdbApiKey(key) }
+                            },
+                            youtubeBackendUrl = youtubeBackendUrl,
+                            onSaveYoutubeBackendUrl = { url ->
+                                coroutineScope.launch { settingsDataStore.saveYoutubeBackendUrl(url) }
+                            },
+                            selectedProviders = selectedRatingProviders,
+                            onToggleProvider = { provider ->
+                                val updated = if (selectedRatingProviders.contains(provider)) {
+                                    selectedRatingProviders - provider
+                                } else {
+                                    selectedRatingProviders + provider
                                 }
-                            )
-                        }
+                                coroutineScope.launch { settingsDataStore.setRatingProviders(updated) }
+                            },
+                            stremioIdStrategy = stremioIdStrategy,
+                            onSelectStremioStrategy = { strat ->
+                                coroutineScope.launch { settingsDataStore.setStremioIdStrategy(strat) }
+                            },
+                            completionThreshold = completionThreshold,
+                            onSaveCompletionThreshold = { pct ->
+                                coroutineScope.launch { settingsDataStore.saveCompletionThreshold(pct) }
+                            },
+                            upNextThreshold = upNextThreshold,
+                            onSaveUpNextThreshold = { pct ->
+                                coroutineScope.launch { settingsDataStore.saveUpNextThreshold(pct) }
+                            },
+                            traktApiKey = traktApiKey,
+                            onSaveTraktApiKey = { key ->
+                                coroutineScope.launch { settingsDataStore.saveTraktApiKey(key) }
+                            },
+                            traktClientSecret = traktClientSecret,
+                            onSaveTraktClientSecret = { secret ->
+                                coroutineScope.launch { settingsDataStore.saveTraktClientSecret(secret) }
+                            },
+                            traktUsername = traktUsername,
+                            traktDeviceCode = traktDeviceCode,
+                            traktVerificationUrl = traktVerificationUrl,
+                            onRequestTraktPairing = {
+                                coroutineScope.launch {
+                                    val res = traktRepository.requestDeviceCode()
+                                    traktDeviceCode = res?.userCode
+                                    traktVerificationUrl = res?.verificationUrl
+                                    if (res != null) {
+                                        // Poll until the user approves (or the code expires);
+                                        // success lands in the settings flows.
+                                        traktRepository.startDeviceAuthPolling(
+                                            deviceCode = res.deviceCode,
+                                            intervalSeconds = res.interval
+                                        )
+                                    }
+                                }
+                            },
+                            onDisconnectTrakt = {
+                                coroutineScope.launch { traktRepository.disconnectTrakt() }
+                            }
+                        )
                     }
                 }
             }
@@ -850,12 +893,22 @@ fun MainAppContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(start = NetflixDimens.RailWidthCollapsed)
+                            .focusRequester(contentFocusRequester)
+                            .clickable(
+                                interactionSource = contentInteractionSource,
+                                indication = null
+                            ) { }
                     ) {
                         screenContent()
                     }
                     StremFlixNavRail(
                         currentDestination = currentNavDestination,
-                        onDestinationSelected = { dest -> currentNavDestination = dest }
+                        onDestinationSelected = { dest ->
+                            currentNavDestination = dest
+                            // Pull focus out of the rail so the sidebar collapses
+                            // and the selected screen becomes the D-pad surface.
+                            runCatching { contentFocusRequester.requestFocus() }
+                        }
                     )
                 }
             }

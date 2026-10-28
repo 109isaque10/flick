@@ -18,6 +18,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
@@ -33,12 +34,16 @@ import androidx.compose.material3.OutlinedTextFieldDefaults
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -71,6 +76,16 @@ fun StreamSelectionDialog(
     onNavigateToSettings: () -> Unit,
     modifier: Modifier = Modifier
 ) {
+
+    // The dialog is entered from the detail page or the player; land on the
+    // first source so one OK press starts playback.
+    val firstStreamRequester = remember { FocusRequester() }
+    LaunchedEffect(streams?.isNotEmpty() == true) {
+        if (streams?.isNotEmpty() == true) {
+            withFrameNanos { }
+            runCatching { firstStreamRequester.requestFocus() }
+        }
+    }
     Dialog(
         onDismissRequest = onDismiss,
         properties = DialogProperties(usePlatformDefaultWidth = false)
@@ -198,7 +213,13 @@ fun StreamSelectionDialog(
                             OutlinedTextField(
                                 value = customUrlInput,
                                 onValueChange = { customUrlInput = it },
-                                placeholder = { Text("Direct stream URL (https://... or magnet:)", fontSize = 12.sp, color = NetflixMutedGray) },
+                                placeholder = {
+                                    Text(
+                                        "Direct stream URL (https://... or magnet:)",
+                                        fontSize = 12.sp,
+                                        color = NetflixMutedGray
+                                    )
+                                },
                                 modifier = Modifier.fillMaxWidth(),
                                 singleLine = true,
                                 colors = OutlinedTextFieldDefaults.colors(
@@ -258,10 +279,15 @@ fun StreamSelectionDialog(
                             .weight(1f),
                         verticalArrangement = Arrangement.spacedBy(10.dp)
                     ) {
-                        items(streams) { stream ->
+                        itemsIndexed(streams) { index, stream ->
                             StreamCardItem(
                                 stream = stream,
-                                onClick = { onStreamSelected(stream) }
+                                onClick = { onStreamSelected(stream) },
+                                modifier = if (index == 0) {
+                                    Modifier.focusRequester(firstStreamRequester)
+                                } else {
+                                    Modifier
+                                }
                             )
                         }
                     }
@@ -285,13 +311,22 @@ fun StreamCardItem(
     val fullText = "${stream.name ?: ""} $descriptionText $filenameText"
 
     val qualityTag = when {
-        fullText.contains("4K", ignoreCase = true) || 
-        fullText.contains("2160p", ignoreCase = true) || 
-        fullText.contains("2160", ignoreCase = true) || 
-        fullText.contains("UHD", ignoreCase = true) || 
-        fullText.contains("REMUX", ignoreCase = true) -> "4K"
-        fullText.contains("1080p", ignoreCase = true) || fullText.contains("1080", ignoreCase = true) || fullText.contains("FHD", ignoreCase = true) -> "FHD"
-        fullText.contains("480p", ignoreCase = true) || fullText.contains("480", ignoreCase = true) || fullText.contains("360p", ignoreCase = true) || fullText.contains("SD", ignoreCase = true) -> "SD"
+        fullText.contains("4K", ignoreCase = true) ||
+                fullText.contains("2160p", ignoreCase = true) ||
+                fullText.contains("2160", ignoreCase = true) ||
+                fullText.contains("UHD", ignoreCase = true) ||
+                fullText.contains("REMUX", ignoreCase = true) -> "4K"
+
+        fullText.contains("1080p", ignoreCase = true) || fullText.contains(
+            "1080",
+            ignoreCase = true
+        ) || fullText.contains("FHD", ignoreCase = true) -> "FHD"
+
+        fullText.contains("480p", ignoreCase = true) || fullText.contains(
+            "480",
+            ignoreCase = true
+        ) || fullText.contains("360p", ignoreCase = true) || fullText.contains("SD", ignoreCase = true) -> "SD"
+
         else -> "HD"
     }
 

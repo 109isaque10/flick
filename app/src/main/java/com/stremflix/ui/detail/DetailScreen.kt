@@ -22,6 +22,7 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -47,13 +48,17 @@ import androidx.compose.material3.IconButton
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -628,6 +633,16 @@ private fun TvDetailContent(
 ) {
     var showMoreEpisodesView by remember { mutableStateOf(false) }
 
+    // Landing focus for the detail page: the primary action is what a viewer
+    // wants, and starting elsewhere forced a D-pad hunt on every open.
+    val playFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(mediaItem.id, showMoreEpisodesView) {
+        if (!showMoreEpisodesView) {
+            withFrameNanos { }
+            runCatching { playFocusRequester.requestFocus() }
+        }
+    }
+
     BackHandler(enabled = showMoreEpisodesView) {
         showMoreEpisodesView = false
     }
@@ -831,7 +846,9 @@ private fun TvDetailContent(
                             onPlayClick(null, null)
                         }
                     },
-                    modifier = Modifier.widthIn(max = 420.dp)
+                    modifier = Modifier
+                        .widthIn(max = 420.dp)
+                        .focusRequester(playFocusRequester)
                 )
 
                 Spacer(modifier = Modifier.height(6.dp))
@@ -1082,6 +1099,19 @@ fun TvEpisodesView(
     completionThreshold: Int,
     modifier: Modifier = Modifier
 ) {
+    // Opening the season list should land on the season already being watched.
+    val seasonListState = rememberLazyListState()
+    val selectedSeasonRequester = remember { FocusRequester() }
+
+    LaunchedEffect(selectedSeason?.seasonNumber, seasons) {
+        val index = seasons.indexOfFirst { it.seasonNumber == selectedSeason?.seasonNumber }
+        if (index >= 0) {
+            runCatching { seasonListState.scrollToItem(index) }
+            withFrameNanos { }
+            runCatching { selectedSeasonRequester.requestFocus() }
+        }
+    }
+
     Box(
         modifier = modifier
             .fillMaxSize()
@@ -1205,6 +1235,7 @@ fun TvEpisodesView(
                 )
 
                 LazyColumn(
+                    state = seasonListState,
                     modifier = Modifier.weight(1f),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
@@ -1227,6 +1258,13 @@ fun TvEpisodesView(
                                     shape = RoundedCornerShape(NetflixDimens.CardRadius)
                                 )
                                 .onFocusChanged { isSeasonFocused = it.isFocused }
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.focusRequester(selectedSeasonRequester)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
                                 .clickable { onSeasonSelected(season) }
                                 .padding(horizontal = 14.dp)
                         ) {
