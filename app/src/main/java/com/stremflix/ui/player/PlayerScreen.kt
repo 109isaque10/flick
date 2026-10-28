@@ -18,6 +18,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.focusable
+import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -71,6 +72,7 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import androidx.lifecycle.compose.LocalLifecycleOwner
@@ -78,11 +80,14 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.input.key.type
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalContext
@@ -388,6 +393,16 @@ fun PlayerScreen(
         }
     }
 
+    // The overlay (and its focus targets) is removed while the controls are
+    // hidden, so focus has to be parked back on a control when they reappear.
+    val controlsFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(isControlsVisible) {
+        if (isControlsVisible) {
+            withFrameNanos { }
+            runCatching { controlsFocusRequester.requestFocus() }
+        }
+    }
+
     // Auto-hide controls timer
     LaunchedEffect(isControlsVisible, lastInteractionTime) {
         if (isControlsVisible) {
@@ -542,12 +557,14 @@ fun PlayerScreen(
                     }
                 } else false
             }
-            .clickable(
-                interactionSource = remember { MutableInteractionSource() },
-                indication = null
-            ) {
-                isControlsVisible = !isControlsVisible
-                if (isControlsVisible) lastInteractionTime = System.currentTimeMillis()
+            // Pointer-only: Modifier.clickable here added a focus node above the
+            // controls that swallowed DPAD_CENTER, so the remote toggled the
+            // overlay instead of activating a button.
+            .pointerInput(Unit) {
+                detectTapGestures {
+                    isControlsVisible = !isControlsVisible
+                    if (isControlsVisible) lastInteractionTime = System.currentTimeMillis()
+                }
             }
     ) {
         // ExoPlayer Video Surface with Fit Aspect Ratio
@@ -685,6 +702,7 @@ fun PlayerScreen(
                                 onBack()
                             },
                             modifier = Modifier
+                                .focusRequester(controlsFocusRequester)
                                 .background(
                                     if (backFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
                                     CircleShape
@@ -694,7 +712,6 @@ fun PlayerScreen(
                                     backFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                     System.currentTimeMillis()
                                 }
-                                .focusable()
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ArrowBack,
@@ -732,7 +749,6 @@ fun PlayerScreen(
                                 castFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                 System.currentTimeMillis()
                             }
-                            .focusable()
                     ) {
                         Icon(
                             imageVector = Icons.Default.Cast,
@@ -770,7 +786,6 @@ fun PlayerScreen(
                                 rewFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                 System.currentTimeMillis()
                             }
-                            .focusable()
                     ) {
                         Icon(
                             imageVector = Icons.Default.Replay10,
@@ -790,7 +805,6 @@ fun PlayerScreen(
                                 playFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                 System.currentTimeMillis()
                             }
-                            .focusable()
                             .clickable {
                                 exoPlayer?.let {
                                     if (it.isPlaying) it.pause() else it.play()
@@ -834,7 +848,6 @@ fun PlayerScreen(
                                 fwdFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                 System.currentTimeMillis()
                             }
-                            .focusable()
                     ) {
                         Icon(
                             imageVector = Icons.Default.Forward10,
@@ -1183,7 +1196,6 @@ fun PlayerScreen(
                                                 shape = RoundedCornerShape(4.dp)
                                             )
                                             .onFocusChanged { epItemFocused = it.isFocused }
-                                            .focusable()
                                             .clickable {
                                                 showEpisodesDrawer = false
                                                 if (onSelectEpisode != null) {
@@ -1506,7 +1518,6 @@ fun PlayerScreen(
                                 .clip(RoundedCornerShape(2.dp))
                                 .background(NetflixDarkSurface)
                                 .onFocusChanged { thumbnailFocused = it.isFocused }
-                                .focusable()
                                 .clickable { triggerPlayNext() }
                         ) {
                             AsyncImage(
@@ -1617,7 +1628,10 @@ private fun PlayerAction(
                 isFocused = it.isFocused
                 if (it.isFocused) onInteracted()
             }
-            .focusable()
+            // `clickable` already makes this node focusable and consumes
+            // DPAD_CENTER. An extra `focusable()` created a second focus target
+            // that swallowed D-pad focus without ever handling activation, which
+            // is why TV remotes could not select any player control.
             .clickable {
                 onInteracted()
                 onClick()
@@ -1713,7 +1727,6 @@ fun AudioSubtitlesSelectionDialog(
                                             shape = RoundedCornerShape(4.dp)
                                         )
                                         .onFocusChanged { rowFocused = it.isFocused }
-                                        .focusable()
                                         .clickable { tempAudio = audio }
                                         .padding(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
@@ -1772,7 +1785,6 @@ fun AudioSubtitlesSelectionDialog(
                                             shape = RoundedCornerShape(4.dp)
                                         )
                                         .onFocusChanged { subRowFocused = it.isFocused }
-                                        .focusable()
                                         .clickable { tempSubtitle = sub }
                                         .padding(horizontal = 8.dp, vertical = 6.dp)
                                 ) {
@@ -1816,7 +1828,6 @@ fun AudioSubtitlesSelectionDialog(
                         shape = RoundedCornerShape(4.dp),
                         modifier = Modifier
                             .onFocusChanged { cancelFocused = it.isFocused }
-                            .focusable()
                     ) {
                         Text(
                             text = stringResource(R.string.action_cancel),
@@ -1833,7 +1844,6 @@ fun AudioSubtitlesSelectionDialog(
                         shape = RoundedCornerShape(4.dp),
                         modifier = Modifier
                             .onFocusChanged { applyFocused = it.isFocused }
-                            .focusable()
                     ) {
                         Text(
                             text = stringResource(R.string.action_apply),

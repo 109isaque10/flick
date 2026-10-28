@@ -22,6 +22,7 @@ class SettingsDataStore(private val context: Context) {
         val KEY_TMDB_REGION = stringPreferencesKey("tmdb_region")
         val KEY_STREMIO_ADDON_URL = stringPreferencesKey("stremio_addon_url")
         val KEY_OMDB_API_KEY = stringPreferencesKey("omdb_api_key")
+        val KEY_YOUTUBE_BACKEND_URL = stringPreferencesKey("youtube_backend_url")
         val KEY_OMDB_ENABLED = booleanPreferencesKey("omdb_enabled")
         val KEY_RATING_PROVIDERS = stringSetPreferencesKey("rating_providers")
         val KEY_STREMIO_ID_STRATEGY = stringPreferencesKey("stremio_id_strategy") // "IMDB" or "TMDB"
@@ -54,6 +55,14 @@ class SettingsDataStore(private val context: Context) {
 
     val omdbApiKey: Flow<String> = context.dataStore.data.map { prefs ->
         prefs[KEY_OMDB_API_KEY] ?: ""
+    }
+
+    /**
+     * Base URL of the user's YouTube backend. Trailers are resolved from
+     * `{base}/api/video/{id}/download`, which returns a DASH manifest.
+     */
+    val youtubeBackendUrl: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_YOUTUBE_BACKEND_URL] ?: ""
     }
 
     val omdbEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -128,6 +137,12 @@ class SettingsDataStore(private val context: Context) {
     suspend fun saveOmdbApiKey(key: String) {
         context.dataStore.edit { prefs ->
             prefs[KEY_OMDB_API_KEY] = key
+        }
+    }
+
+    suspend fun saveYoutubeBackendUrl(url: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_YOUTUBE_BACKEND_URL] = url
         }
     }
 

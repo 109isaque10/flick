@@ -47,7 +47,9 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.input.key.onKeyEvent
 import androidx.compose.ui.platform.LocalFocusManager
@@ -112,6 +114,8 @@ fun SettingsScreen(
     onSaveStremioAddonUrl: (String) -> Unit,
     omdbApiKey: String,
     onSaveOmdbApiKey: (String) -> Unit,
+    youtubeBackendUrl: String,
+    onSaveYoutubeBackendUrl: (String) -> Unit,
     selectedProviders: Set<String>,
     onToggleProvider: (String) -> Unit,
     stremioIdStrategy: String,
@@ -270,7 +274,6 @@ fun SettingsScreen(
                         RoundedCornerShape(4.dp)
                     )
                     .onFocusChanged { rowFocused = it.isFocused }
-                    .focusable()
                     .clickable { onToggleProvider(provider) }
                     .padding(horizontal = 8.dp, vertical = 6.dp),
                 verticalAlignment = Alignment.CenterVertically
@@ -306,6 +309,22 @@ fun SettingsScreen(
                 StremioStrategyButtons(stremioIdStrategy, onSelectStremioStrategy)
             }
         }
+
+        Spacer(modifier = Modifier.height(28.dp))
+
+        // YouTube Trailer Backend
+        SettingsSectionHeader(title = "YouTube Trailer Backend")
+        Text(
+            text = "Base URL of your YouTube backend (e.g. http://192.168.1.10:8000). Trailers are loaded from /api/video/{id}/download.",
+            color = NetflixLightGray,
+            fontSize = 13.sp,
+            modifier = Modifier.padding(bottom = 8.dp)
+        )
+        AutoSaveInputField(
+            initialValue = youtubeBackendUrl,
+            placeholder = "Enter backend base URL (e.g. http://127.0.0.1:8000)",
+            onSave = onSaveYoutubeBackendUrl
+        )
 
         Spacer(modifier = Modifier.height(28.dp))
 
@@ -472,91 +491,77 @@ fun ThresholdStepper(
             )
         }
 
-        Spacer(modifier = Modifier.height(8.dp))
+        Spacer(modifier = Modifier.height(10.dp))
 
-        // Fine-grained 1% slider
-        // Dragging is local; DataStore is written once on release instead of per pixel.
-        var isDragging by remember { mutableStateOf(false) }
-        var dragValue by remember { mutableStateOf(currentValue.toFloat()) }
-
-        Slider(
-            value = if (isDragging) dragValue else currentValue.toFloat(),
-            onValueChange = {
-                isDragging = true
-                dragValue = it
-            },
-            onValueChangeFinished = {
-                isDragging = false
-                onValueChange(dragValue.toInt().coerceIn(min, max))
-            },
-            valueRange = min.toFloat()..max.toFloat(),
-            steps = max - min - 1,
-            colors = SliderDefaults.colors(
-                thumbColor = NetflixRed,
-                activeTrackColor = NetflixRed,
-                inactiveTrackColor = NetflixLightGray.copy(alpha = 0.3f)
-            ),
-            modifier = Modifier.fillMaxWidth()
-        )
-
-        Spacer(modifier = Modifier.height(8.dp))
+        // Discrete choices instead of a Slider. A Slider cannot be driven by a
+        // TV remote: D-pad focus could land on the track but left/right never
+        // resolved to a value, so these thresholds could not be changed at all.
+        val presets = listOf(70, 85, 95).filter { it in min..max }
+            .ifEmpty { listOf(min, max) }
 
         Row(
             modifier = Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            var decFocused by remember { mutableStateOf(false) }
-            Button(
-                onClick = { onValueChange((currentValue - 1).coerceAtLeast(min)) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (decFocused) NetflixRed else NetflixCardSurface,
-                    contentColor = NetflixWhite
-                ),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .onFocusChanged { decFocused = it.isFocused }
-                    .focusable()
-            ) {
-                Icon(Icons.Default.Remove, contentDescription = "Decrease 1%", modifier = Modifier.size(16.dp))
-                Text(text = "-1%", fontSize = 11.sp)
-            }
-
-            val presets = listOf(75, 80, 85, 90, 95, 100).filter { it in min..max }
+            ThresholdChip(
+                text = "\u2212",
+                selected = false,
+                enabled = currentValue > min,
+                onClick = { onValueChange((currentValue - step).coerceAtLeast(min)) }
+            )
             presets.forEach { preset ->
-                val isSelected = currentValue == preset
-                var btnFocused by remember { mutableStateOf(false) }
-                Button(
-                    onClick = { onValueChange(preset) },
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (isSelected) NetflixRed else if (btnFocused) NetflixWhite.copy(alpha = 0.25f) else NetflixCardSurface,
-                        contentColor = NetflixWhite
-                    ),
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .onFocusChanged { btnFocused = it.isFocused }
-                        .focusable()
-                ) {
-                    Text(text = "$preset%", fontSize = 12.sp)
-                }
+                ThresholdChip(
+                    text = "$preset%",
+                    selected = currentValue == preset,
+                    enabled = true,
+                    onClick = { onValueChange(preset) }
+                )
             }
-
-            var incFocused by remember { mutableStateOf(false) }
-            Button(
-                onClick = { onValueChange((currentValue + 1).coerceAtMost(max)) },
-                colors = ButtonDefaults.buttonColors(
-                    containerColor = if (incFocused) NetflixRed else NetflixCardSurface,
-                    contentColor = NetflixWhite
-                ),
-                shape = RoundedCornerShape(4.dp),
-                modifier = Modifier
-                    .onFocusChanged { incFocused = it.isFocused }
-                    .focusable()
-            ) {
-                Icon(Icons.Default.Add, contentDescription = "Increase 1%", modifier = Modifier.size(16.dp))
-                Text(text = "+1%", fontSize = 11.sp)
-            }
+            ThresholdChip(
+                text = "+",
+                selected = false,
+                enabled = currentValue < max,
+                onClick = { onValueChange((currentValue + step).coerceAtMost(max)) }
+            )
         }
+    }
+}
+
+@Composable
+private fun ThresholdChip(
+    text: String,
+    selected: Boolean,
+    enabled: Boolean,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    Box(
+        modifier = Modifier
+            .clip(RoundedCornerShape(4.dp))
+            .background(
+                when {
+                    selected -> NetflixRed
+                    focused -> NetflixWhite.copy(alpha = 0.22f)
+                    else -> NetflixCardSurface
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) NetflixWhite else Color.Transparent,
+                shape = RoundedCornerShape(4.dp)
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable(enabled = enabled) { onClick() }
+            .padding(horizontal = 14.dp, vertical = 10.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = if (enabled) NetflixWhite else NetflixLightGray.copy(alpha = 0.5f),
+            fontSize = 13.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
+        )
     }
 }
 
@@ -585,7 +590,6 @@ fun LanguageDropdownMenu(
                     shape = RoundedCornerShape(NetflixDimens.CardRadius)
                 )
                 .onFocusChanged { isFocused = it.isFocused }
-                .focusable()
                 .clickable { expanded = true }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -653,7 +657,6 @@ fun CountryDropdownMenu(
                     shape = RoundedCornerShape(NetflixDimens.CardRadius)
                 )
                 .onFocusChanged { isFocused = it.isFocused }
-                .focusable()
                 .clickable { expanded = true }
                 .padding(horizontal = 14.dp),
             verticalAlignment = Alignment.CenterVertically,
@@ -793,7 +796,6 @@ fun StremioStrategyButtons(
         shape = RoundedCornerShape(4.dp),
         modifier = Modifier
             .onFocusChanged { imdbBtnFocused = it.isFocused }
-            .focusable()
     ) {
         Text(text = "IMDb IDs (tt1234567)")
     }
@@ -808,7 +810,6 @@ fun StremioStrategyButtons(
         shape = RoundedCornerShape(4.dp),
         modifier = Modifier
             .onFocusChanged { tmdbBtnFocused = it.isFocused }
-            .focusable()
     ) {
         Text(text = "TMDB IDs (tmdb:123)")
     }

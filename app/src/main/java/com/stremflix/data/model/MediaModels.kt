@@ -18,6 +18,11 @@ data class MediaItem(
     val genres: List<String> = emptyList(),
     val cast: List<String> = emptyList(),
     val director: String = "",
+    // Showrunners/creators, only filled for TV titles.
+    val creators: List<String> = emptyList(),
+    // YouTube video key from TMDB (/videos). Null when the title has no trailer.
+    val trailerKey: String? = null,
+    val trailerName: String = "",
     val imdbId: String? = null,
     val logoPath: String? = null,
     val ratingsCluster: RatingsCluster = RatingsCluster()

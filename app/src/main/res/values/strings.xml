@@ -17,6 +17,7 @@
     <string name="action_my_list">My List</string>
     <string name="action_in_list">In My List</string>
     <string name="action_resume">Resume</string>
+    <string name="action_resume_episode_format">Resume S%1$d: Ep. %2$d</string>
     <string name="action_connect">Connect</string>
     <string name="action_disconnect">Disconnect</string>
     <string name="action_add">Add</string>
@@ -133,6 +134,8 @@
     <string name="action_speed">Speed (%1$s)</string>
     <string name="action_audio_subtitles">Audio &amp; Subtitles</string>
     <string name="detail_cast_prefix">Cast: %1$s</string>
+    <string name="detail_creators_prefix">Creators: %1$s</string>
+    <string name="label_trailer">Trailer</string>
     <string name="detail_directors_prefix">Directors: %1$s</string>
     <string name="detail_genres_prefix">Genres: %1$s</string>
     <string name="detail_subtitles_prefix">Subtitles: %1$s</string>

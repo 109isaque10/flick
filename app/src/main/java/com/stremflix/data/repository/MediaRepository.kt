@@ -18,11 +18,16 @@ import com.stremflix.data.model.MediaItem
 import com.stremflix.data.model.RatingsCluster
 import com.stremflix.data.model.SeasonModel
 import com.stremflix.data.remote.ApiClient
+import com.stremflix.data.remote.TmdbCreditsDto
 import com.stremflix.data.remote.TmdbMediaDto
+import com.stremflix.data.remote.TmdbMovieDetailDto
+import com.stremflix.data.remote.TmdbTvDetailDto
+import com.stremflix.data.remote.TmdbVideoDto
 import com.stremflix.data.model.SpotlightType
 import kotlinx.coroutines.async
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.channelFlow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 
@@ -47,8 +52,18 @@ class MediaRepository(
     val watchHistory: Flow<List<WatchHistoryEntity>> = watchHistoryDao.getAllWatchHistory()
     val watchlist: Flow<List<WatchlistEntity>> = watchlistDao.getWatchlist()
 
-    suspend fun getHomeContentRows(): List<ContentRow> = coroutineScope {
+    /**
+     * Emits home rows progressively: each row is delivered as soon as its own
+     * request completes instead of waiting for the slowest one, so the UI can
+     * start rendering after the first round trip.
+     */
+    fun getHomeContentRowsFlow(): Flow<List<ContentRow>> = channelFlow {
         val rows = mutableListOf<ContentRow>()
+        suspend fun push(row: ContentRow) {
+            rows.add(row)
+            send(rows.toList())
+        }
+
         val tmdbApiKey = getEffectiveTmdbApiKey()
         val language = settingsDataStore.tmdbLanguage.first()
         val region = settingsDataStore.tmdbRegion.first()
@@ -142,7 +157,7 @@ class MediaRepository(
                     voteAverage = 8.5
                 )
             }
-            rows.add(
+            push(
                 ContentRow(
                     id = "continue_watching",
                     title = "Continue Watching for You",
@@ -154,7 +169,7 @@ class MediaRepository(
             val recsItems = recsDeferred.await()
             if (recsItems.isNotEmpty()) {
                 val lastWatched = historyList.first()
-                rows.add(
+                push(
                     ContentRow(
                         id = "based_on_last_watched",
                         title = "Because you watched ${lastWatched.title}",
@@ -168,7 +183,7 @@ class MediaRepository(
         // 2. Trending Today (Top 250 / Top 10 spotlight style)
         val trendingItems = trendingDeferred.await()
         if (trendingItems.isNotEmpty()) {
-            rows.add(
+            push(
                 ContentRow(
                     id = "trending_today",
                     title = "Top 10 / Trending Today",
@@ -182,7 +197,7 @@ class MediaRepository(
         // 3. Bingeworthy TV Shows (N Series style)
         val popularTv = popularTvDeferred.await()
         if (popularTv.isNotEmpty()) {
-            rows.add(
+            push(
                 ContentRow(
                     id = "bingeworthy_tv",
                     title = "N Series & Bingeworthy Shows",
@@ -196,7 +211,7 @@ class MediaRepository(
         // 4. Popular Movies (Big Home Trailer Spotlight style)
         val popularMovies = popularMoviesDeferred.await()
         if (popularMovies.isNotEmpty()) {
-            rows.add(
+            push(
                 ContentRow(
                     id = "popular_movies",
                     title = "Popular Movies Spotlight",
@@ -210,7 +225,7 @@ class MediaRepository(
         // 5. Action & Adventure
         val actionItems = actionDeferred.await()
         if (actionItems.isNotEmpty()) {
-            rows.add(
+            push(
                 ContentRow(
                     id = "action_adventure",
                     title = "Action & Adventure",
@@ -220,7 +235,6 @@ class MediaRepository(
             )
         }
 
-        rows
     }
 
     suspend fun getNewAndPopularContentRows(): List<ContentRow> = coroutineScope {
@@ -517,6 +531,172 @@ class MediaRepository(
         return path
     }
 
+
+    /**
+     * Credits, genres, runtime and videos have no Room columns (the metadata
+     * table is intentionally migration-free), so they are memoised in memory
+     * for the process lifetime instead of being persisted.
+     */
+    private data class DetailExtras(
+        val genres: List<String> = emptyList(),
+        val cast: List<String> = emptyList(),
+        val director: String = "",
+        val creators: List<String> = emptyList(),
+        val duration: String = "",
+        val trailerKey: String? = null,
+        val trailerName: String = ""
+    )
+
+    private val detailExtrasCache = java.util.concurrent.ConcurrentHashMap<String, DetailExtras>()
+
+    private fun extrasFromCredits(
+        genres: List<String>,
+        cast: List<String>,
+        director: String,
+        creators: List<String>,
+        duration: String,
+        videos: List<TmdbVideoDto>?,
+        preferredLanguage: String
+    ): DetailExtras {
+        val trailer = pickTrailer(videos, preferredLanguage)
+        return DetailExtras(
+            genres = genres,
+            cast = cast,
+            director = director,
+            creators = creators,
+            duration = duration,
+            trailerKey = trailer?.key,
+            trailerName = trailer?.name.orEmpty()
+        )
+    }
+
+    private fun extrasFromMovieDetails(dto: TmdbMovieDetailDto, preferredLanguage: String): DetailExtras {
+        val credits = dto.credits
+        return extrasFromCredits(
+            genres = dto.genres.orEmpty().map { it.name }.filter { it.isNotBlank() },
+            cast = topCast(credits),
+            director = credits?.crew.orEmpty()
+                .firstOrNull { it.job.equals("Director", ignoreCase = true) }?.name.orEmpty(),
+            creators = emptyList(),
+            duration = formatRuntime(dto.runtime),
+            videos = dto.videos?.results,
+            preferredLanguage = preferredLanguage
+        )
+    }
+
+    private fun extrasFromTvDetails(dto: TmdbTvDetailDto, preferredLanguage: String): DetailExtras = extrasFromCredits(
+        genres = dto.genres.orEmpty().map { it.name }.filter { it.isNotBlank() },
+        cast = topCast(dto.credits),
+        director = "",
+        creators = dto.createdBy.orEmpty().mapNotNull { it.name?.takeIf(String::isNotBlank) },
+        duration = formatRuntime(dto.episodeRunTime.orEmpty().firstOrNull { it > 0 }),
+        videos = dto.videos?.results,
+        preferredLanguage = preferredLanguage
+    )
+
+    private fun topCast(credits: TmdbCreditsDto?): List<String> =
+        credits?.cast.orEmpty()
+            .sortedBy { it.order ?: Int.MAX_VALUE }
+            .mapNotNull { it.name?.takeIf(String::isNotBlank) }
+            .take(5)
+
+    /**
+     * The videos endpoint returns every locale TMDB holds, so the pick happens
+     * client-side: exact locale (pt-BR), then its base language (pt), then
+     * English, then anything (which covers the original language). Within a
+     * tier an official upload wins.
+     */
+    private fun pickTrailer(videos: List<TmdbVideoDto>?, preferredLanguage: String): TmdbVideoDto? {
+        val youtube = videos.orEmpty().filter {
+            it.site.equals("YouTube", ignoreCase = true) && !it.key.isNullOrBlank()
+        }
+        if (youtube.isEmpty()) return null
+
+        val pool = youtube.filter { it.type.equals("Trailer", ignoreCase = true) }
+            .ifEmpty { youtube.filter { it.type.equals("Teaser", ignoreCase = true) } }
+            .ifEmpty { youtube }
+
+        val base = preferredLanguage.substringBefore('-').ifBlank { "en" }
+        val region = preferredLanguage.substringAfter('-', "").ifBlank { null }
+
+        fun matchesLocale(video: TmdbVideoDto): Boolean =
+            video.language.equals(base, ignoreCase = true) &&
+                (region == null || video.country.equals(region, ignoreCase = true))
+
+        val tiers = listOf(
+            pool.filter(::matchesLocale),
+            pool.filter { it.language.equals(base, ignoreCase = true) },
+            pool.filter { it.language.equals("en", ignoreCase = true) },
+            pool
+        )
+
+        tiers.forEach { tier ->
+            if (tier.isEmpty()) return@forEach
+            return tier.firstOrNull { it.official == true } ?: tier.first()
+        }
+        return null
+    }
+
+    private fun formatRuntime(minutes: Int?): String {
+        val total = minutes ?: return ""
+        if (total <= 0) return ""
+        val hours = total / 60
+        val mins = total % 60
+        return when {
+            hours > 0 && mins > 0 -> "${hours}h ${mins}m"
+            hours > 0 -> "${hours}h"
+            else -> "${mins}m"
+        }
+    }
+
+    private fun MediaItem.withExtras(extras: DetailExtras): MediaItem = copy(
+        genres = genres.ifEmpty { extras.genres },
+        cast = cast.ifEmpty { extras.cast },
+        director = director.ifBlank { extras.director },
+        creators = creators.ifEmpty { extras.creators },
+        durationOrSeasons = durationOrSeasons.ifBlank { extras.duration },
+        trailerKey = trailerKey ?: extras.trailerKey,
+        trailerName = trailerName.ifBlank { extras.trailerName }
+    )
+
+    private suspend fun loadDetailExtras(tmdbId: Int, mediaType: String): DetailExtras {
+        val key = "${mediaType}_$tmdbId"
+        detailExtrasCache[key]?.let { return it }
+        return try {
+            val apiKey = getEffectiveTmdbApiKey()
+            if (apiKey.isBlank()) {
+                DetailExtras()
+            } else {
+                val language = settingsDataStore.tmdbLanguage.first()
+                val extras = if (mediaType == "tv") {
+                    extrasFromTvDetails(
+                        ApiClient.tmdbApi.getTvDetails(
+                            id = tmdbId,
+                            apiKey = apiKey,
+                            language = language,
+                            appendToResponse = "credits,videos"
+                        ),
+                        language
+                    )
+                } else {
+                    extrasFromMovieDetails(
+                        ApiClient.tmdbApi.getMovieDetails(
+                            id = tmdbId,
+                            apiKey = apiKey,
+                            language = language,
+                            appendToResponse = "credits,videos"
+                        ),
+                        language
+                    )
+                }
+                detailExtrasCache[key] = extras
+                extras
+            }
+        } catch (e: Exception) {
+            DetailExtras()
+        }
+    }
+
     suspend fun getMediaDetailsWithRatings(tmdbId: Int, mediaType: String, initialItem: MediaItem?): MediaItem {
         val idKey = "${mediaType}_$tmdbId"
         val cachedMetadata = mediaMetadataDao?.getMediaMetadata(idKey)
@@ -555,7 +735,7 @@ class MediaRepository(
                 ratingsCluster = ratings,
                 matchPercentage = ((cachedMetadata.voteAverage) * 10).toInt().coerceIn(65, 99),
                 logoPath = fetchLogoPath(tmdbId, mediaType)
-            )
+            ).withExtras(loadDetailExtras(tmdbId, mediaType))
         }
 
         val base = initialItem ?: MediaItem(
@@ -585,7 +765,13 @@ class MediaRepository(
 
         if (mediaType == "tv") {
             try {
-                val tvDetails = ApiClient.tmdbApi.getTvDetails(id = tmdbId, apiKey = tmdbApiKey, language = language)
+                val tvDetails = ApiClient.tmdbApi.getTvDetails(
+                    id = tmdbId,
+                    apiKey = tmdbApiKey,
+                    language = language,
+                    appendToResponse = "credits,videos"
+                )
+                detailExtrasCache[idKey] = extrasFromTvDetails(tvDetails, language)
                 localizedTitle = tvDetails.name
                 localizedOverview = tvDetails.overview
                 mediaStatus = tvDetails.status
@@ -601,8 +787,13 @@ class MediaRepository(
             }
         } else if (mediaType == "movie") {
             try {
-                val movieDetails =
-                    ApiClient.tmdbApi.getMovieDetails(id = tmdbId, apiKey = tmdbApiKey, language = language)
+                val movieDetails = ApiClient.tmdbApi.getMovieDetails(
+                    id = tmdbId,
+                    apiKey = tmdbApiKey,
+                    language = language,
+                    appendToResponse = "credits,videos"
+                )
+                detailExtrasCache[idKey] = extrasFromMovieDetails(movieDetails, language)
                 localizedTitle = movieDetails.title
                 localizedOverview = movieDetails.overview
             } catch (e: Exception) {
@@ -647,7 +838,7 @@ class MediaRepository(
             contentRating = dynamicRating ?: base.contentRating,
             ratingsCluster = ratingsCluster,
             logoPath = fetchLogoPath(tmdbId, mediaType)
-        )
+        ).withExtras(loadDetailExtras(tmdbId, mediaType))
 
         // Cache in Room DB
         mediaMetadataDao?.saveMediaMetadata(

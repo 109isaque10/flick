@@ -1,5 +1,7 @@
 package com.stremflix
 
+import android.content.Intent
+import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.BackHandler
@@ -23,6 +25,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.platform.LocalContext
 import com.stremflix.data.local.SettingsDataStore
 import com.stremflix.data.local.StremFlixDatabase
 import com.stremflix.data.model.ContentRow
@@ -42,6 +45,8 @@ import com.stremflix.ui.navigation.NavDestination
 import com.stremflix.ui.navigation.StremFlixBottomNavBar
 import com.stremflix.ui.navigation.StremFlixNavRail
 import com.stremflix.ui.player.PlayerScreen
+import com.stremflix.ui.player.TrailerPlayerScreen
+import com.stremflix.ui.player.TrailerSource
 import com.stremflix.ui.search.SearchScreen
 import com.stremflix.ui.settings.SettingsScreen
 import com.stremflix.ui.splash.StartupSplash
@@ -125,6 +130,7 @@ fun MainAppContent(
     settingsDataStore: SettingsDataStore
 ) {
     val coroutineScope = rememberCoroutineScope()
+    val context = LocalContext.current
 
     // Trakt Initial Sync on App Launch
     LaunchedEffect(Unit) {
@@ -139,6 +145,11 @@ fun MainAppContent(
     var activeStreamUrl by remember { mutableStateOf<String?>(null) }
     var activeStreamTitle by remember { mutableStateOf("") }
     var activeStreamSubtitle by remember { mutableStateOf<String?>(null) }
+
+    // Trailers are short clips, so they keep their own minimal player state
+    // instead of going through the episode/stream pipeline.
+    var activeTrailerUrl by remember { mutableStateOf<String?>(null) }
+    var activeTrailerTitle by remember { mutableStateOf("") }
 
     // Stream Selection Dialog State
     var streamSelectionItem by remember { mutableStateOf<MediaItem?>(null) }
@@ -157,6 +168,9 @@ fun MainAppContent(
     var activePlayingSeason by remember { mutableStateOf<Int?>(null) }
     var activePlayingEpisode by remember { mutableStateOf<Int?>(null) }
     var activePlayingInitialPositionMs by remember { mutableStateOf(0L) }
+    // Set by the detail page's "Play from beginning" action so the saved
+    // resume position is ignored for that one playback.
+    var forcePlayFromBeginning by remember { mutableStateOf(false) }
 
     // Detail Data
     var tvSeasons by remember { mutableStateOf<List<SeasonModel>>(emptyList()) }
@@ -209,6 +223,7 @@ fun MainAppContent(
     val tmdbRegion by settingsDataStore.tmdbRegion.collectAsState(initial = "US")
     val stremioAddonUrl by settingsDataStore.stremioAddonUrl.collectAsState(initial = "https://torrentio.strem.fun/")
     val omdbApiKey by settingsDataStore.omdbApiKey.collectAsState(initial = "")
+    val youtubeBackendUrl by settingsDataStore.youtubeBackendUrl.collectAsState(initial = "")
     val selectedRatingProviders by settingsDataStore.selectedRatingProviders.collectAsState(
         initial = setOf(
             "IMDb",
@@ -267,13 +282,32 @@ fun MainAppContent(
         }
     }
 
-    // Load Initial Home Content when key or language/region changes
+    // Load Initial Home Content when key or language/region changes.
+    // Rows stream in progressively, so the first row paints after one round trip
+    // instead of waiting for every request to finish.
     LaunchedEffect(tmdbApiKey, tmdbLanguage, tmdbRegion, traktApiKey) {
-        contentRows = mediaRepository.getHomeContentRows()
-        newAndPopularRows = mediaRepository.getNewAndPopularContentRows()
-        val rawHero = contentRows.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()
-        if (rawHero != null) {
-            heroItem = mediaRepository.getMediaDetailsWithRatings(rawHero.id, rawHero.mediaType, rawHero)
+        newAndPopularRows = emptyList() // refetched lazily on next visit
+        var heroResolved = false
+        mediaRepository.getHomeContentRowsFlow().collect { rows ->
+            contentRows = rows
+            if (!heroResolved) {
+                val rawHero = rows.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull()
+                if (rawHero != null) {
+                    heroResolved = true
+                    launch {
+                        heroItem =
+                            mediaRepository.getMediaDetailsWithRatings(rawHero.id, rawHero.mediaType, rawHero)
+                    }
+                }
+            }
+        }
+    }
+
+    // New & Popular duplicates several home requests, so it is only loaded
+    // when its tab is actually opened.
+    LaunchedEffect(currentNavDestination, tmdbApiKey, tmdbLanguage, tmdbRegion, traktApiKey) {
+        if (currentNavDestination == NavDestination.NEW_POPULAR && newAndPopularRows.isEmpty()) {
+            newAndPopularRows = mediaRepository.getNewAndPopularContentRows()
         }
     }
 
@@ -354,8 +388,15 @@ fun MainAppContent(
     }
 
     // Play Stream Helper Function - Triggers Stream Selection Dialog or auto-plays next episode
-    fun playMediaStream(item: MediaItem, season: Int? = null, episode: Int? = null, autoPlayDirectly: Boolean = false) {
+    fun playMediaStream(
+        item: MediaItem,
+        season: Int? = null,
+        episode: Int? = null,
+        autoPlayDirectly: Boolean = false,
+        fromBeginning: Boolean = false
+    ) {
         coroutineScope.launch {
+            forcePlayFromBeginning = fromBeginning
             val actualSeason: Int?
             val actualEpisode: Int?
             if (item.mediaType == "tv") {
@@ -388,7 +429,7 @@ fun MainAppContent(
                         episodeNumber = actualEpisode,
                         completionThreshold = completionThreshold
                     )
-                    activePlayingInitialPositionMs = savedPosition
+                    activePlayingInitialPositionMs = if (forcePlayFromBeginning) 0L else savedPosition
                     activeStreamUrl = topStream.url
                     activeStreamTitle = item.title
                     val epSubtitle =
@@ -446,7 +487,13 @@ fun MainAppContent(
             .fillMaxSize()
             .background(NetflixBlack)
     ) {
-        if (activeStreamUrl != null) {
+        if (activeTrailerUrl != null) {
+            TrailerPlayerScreen(
+                streamUrl = activeTrailerUrl!!,
+                title = activeTrailerTitle,
+                onBack = { activeTrailerUrl = null }
+            )
+        } else if (activeStreamUrl != null) {
             // Fullscreen Player
             PlayerScreen(
                 streamUrl = activeStreamUrl!!,
@@ -555,6 +602,35 @@ fun MainAppContent(
                         val targetSeason = season ?: smartNextSeason ?: 1
                         val targetEpisode = episode ?: smartNextEpisode ?: 1
                         playMediaStream(item, targetSeason, targetEpisode)
+                    }
+                },
+                onPlayFromBeginning = {
+                    selectedMediaItem?.let { item ->
+                        if (item.mediaType == "tv") {
+                            playMediaStream(item, smartNextSeason ?: 1, smartNextEpisode ?: 1, fromBeginning = true)
+                        } else {
+                            playMediaStream(item, fromBeginning = true)
+                        }
+                    }
+                },
+                onPlayTrailer = selectedMediaItem?.trailerKey?.let { trailerKey ->
+                    {
+                        val target = selectedMediaItem
+                        val resolvedUrl = TrailerSource.manifestUrl(youtubeBackendUrl, trailerKey)
+                        if (resolvedUrl != null) {
+                            activeTrailerTitle = target?.trailerName
+                                ?.takeIf { it.isNotBlank() }
+                                ?: target?.title.orEmpty()
+                            activeTrailerUrl = resolvedUrl
+                        } else {
+                            // No inline resolver configured: hand the key to the
+                            // YouTube app rather than faking playback.
+                            val intent = Intent(
+                                Intent.ACTION_VIEW,
+                                Uri.parse(TrailerSource.youtubeWatchUrl(trailerKey))
+                            )
+                            runCatching { context.startActivity(intent) }
+                        }
                     }
                 },
                 onToggleWatchlist = {
@@ -698,6 +774,10 @@ fun MainAppContent(
                                 onSaveOmdbApiKey = { key ->
                                     coroutineScope.launch { settingsDataStore.saveOmdbApiKey(key) }
                                 },
+                                youtubeBackendUrl = youtubeBackendUrl,
+                                onSaveYoutubeBackendUrl = { url ->
+                                    coroutineScope.launch { settingsDataStore.saveYoutubeBackendUrl(url) }
+                                },
                                 selectedProviders = selectedRatingProviders,
                                 onToggleProvider = { provider ->
                                     val updated = if (selectedRatingProviders.contains(provider)) {
@@ -800,7 +880,7 @@ fun MainAppContent(
                             episodeNumber = streamSelectionEpisode,
                             completionThreshold = completionThreshold
                         )
-                        activePlayingInitialPositionMs = savedPos
+                        activePlayingInitialPositionMs = if (forcePlayFromBeginning) 0L else savedPos
                         activePlayingItem = item
                         activePlayingSeason = streamSelectionSeason
                         activePlayingEpisode = streamSelectionEpisode

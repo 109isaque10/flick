@@ -74,6 +74,10 @@ import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
 import com.stremflix.ui.theme.isCompactScreen
 import com.stremflix.ui.theme.isCompactWidth
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
 
 @Composable
 fun HomeScreen(
@@ -331,6 +335,15 @@ fun HeroSection(
     val startPadding = if (isPhone) 16.dp else 36.dp
     val endPadding = if (isPhone) 48.dp else 200.dp
 
+    // Netflix opens on content, not chrome. Compose otherwise hands the initial
+    // D-pad focus to the first focusable in the tree, which is the navigation
+    // rail, so the app started with an expanded sidebar instead of Home.
+    val playFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(Unit) {
+        withFrameNanos { }
+        runCatching { playFocusRequester.requestFocus() }
+    }
+
     Box(
         modifier = modifier
             .fillMaxWidth()
@@ -481,8 +494,8 @@ fun HeroSection(
                     shape = RoundedCornerShape(NetflixDimens.CardRadius),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                     modifier = Modifier
+                        .focusRequester(playFocusRequester)
                         .onFocusChanged { playFocused = it.isFocused }
-                        .focusable()
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
@@ -522,7 +535,6 @@ fun HeroSection(
                     contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
                     modifier = Modifier
                         .onFocusChanged { infoFocused = it.isFocused }
-                        .focusable()
                 ) {
                     Icon(
                         imageVector = Icons.Default.Info,
@@ -653,7 +665,6 @@ fun MediaCard(
                 shape = RoundedCornerShape(NetflixDimens.CardRadius)
             )
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
             .clickable { onClick() }
     ) {
         AsyncImage(

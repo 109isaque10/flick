@@ -326,7 +326,6 @@ fun SearchScreen(
                                             shape = RoundedCornerShape(4.dp)
                                         )
                                         .onFocusChanged { isKeyFocused = it.isFocused }
-                                        .focusable()
                                         .clickable { onQueryChange(searchQuery + charKey.lowercase()) },
                                     contentAlignment = Alignment.Center
                                 ) {
@@ -361,7 +360,6 @@ fun SearchScreen(
                             .weight(1.2f)
                             .height(38.dp)
                             .onFocusChanged { spaceFocused = it.isFocused }
-                            .focusable()
                     ) {
                         Text(
                             text = stringResource(R.string.search_space),
@@ -386,7 +384,6 @@ fun SearchScreen(
                             .weight(1.2f)
                             .height(38.dp)
                             .onFocusChanged { bkFocused = it.isFocused }
-                            .focusable()
                     ) {
                         Icon(Icons.Default.Backspace, contentDescription = "Backspace", modifier = Modifier.size(16.dp))
                     }
@@ -403,7 +400,6 @@ fun SearchScreen(
                             .weight(1f)
                             .height(38.dp)
                             .onFocusChanged { clearFocused = it.isFocused }
-                            .focusable()
                     ) {
                         Text(
                             text = stringResource(R.string.search_clear),

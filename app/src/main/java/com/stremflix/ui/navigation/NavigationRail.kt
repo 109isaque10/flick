@@ -39,10 +39,12 @@ import androidx.compose.material3.NavigationBarItem
 import androidx.compose.material3.NavigationBarItemDefaults
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
@@ -111,7 +113,6 @@ private fun RailItem(
                 shape = shape
             )
             .onFocusChanged { focused = it.isFocused }
-            .focusable()
             .clickable { onClick() }
             .padding(horizontal = 10.dp),
         verticalAlignment = Alignment.CenterVertically
@@ -156,7 +157,19 @@ fun StremFlixNavRail(
     onReloadRequested: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
-    var isRailFocused by remember { mutableStateOf(false) }
+    var railHasFocus by remember { mutableStateOf(false) }
+    // On launch Compose parks the initial D-pad focus on the first focusable in
+    // the tree, which is this rail (home content is composed first but has no
+    // focusable until the hero loads). Expanding on that first focus made the
+    // app open with the sidebar already open. Focus is still accepted
+    // immediately - only the expansion animation waits for the hand-off to the
+    // hero, so a deliberate visit still expands normally.
+    var expansionArmed by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        delay(500)
+        expansionArmed = true
+    }
+    val isRailFocused = railHasFocus && expansionArmed
     val railWidth by animateDpAsState(
         targetValue = if (isRailFocused) NetflixDimens.RailWidthExpanded else NetflixDimens.RailWidthCollapsed,
         label = "railWidth"
@@ -165,8 +178,8 @@ fun StremFlixNavRail(
 
     val destinations = remember {
         listOf(
-            NavDestination.SEARCH,
             NavDestination.HOME,
+            NavDestination.SEARCH,
             NavDestination.NEW_POPULAR,
             NavDestination.TV_SHOWS,
             NavDestination.MOVIES,
@@ -180,7 +193,7 @@ fun StremFlixNavRail(
             .width(railWidth)
             .fillMaxHeight()
             .statusBarsPadding()
-            .onFocusChanged { isRailFocused = it.hasFocus }
+            .onFocusChanged { railHasFocus = it.hasFocus }
             .background(
                 Brush.horizontalGradient(
                     colors = listOf(
@@ -270,7 +283,6 @@ fun StremFlixNavRail(
                             shape = shape
                         )
                         .onFocusChanged { reloadFocused = it.isFocused }
-                        .focusable()
                         .clickable {
                             onReloadRequested()
                             (context as? Activity)?.recreate()

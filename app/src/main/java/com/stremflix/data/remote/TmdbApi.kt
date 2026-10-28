@@ -74,7 +74,11 @@ data class TmdbMovieDetailDto(
     @Json(name = "release_date") val releaseDate: String? = null,
     @Json(name = "vote_average") val voteAverage: Double? = 0.0,
     @Json(name = "tagline") val tagline: String? = null,
-    @Json(name = "runtime") val runtime: Int? = null
+    @Json(name = "runtime") val runtime: Int? = null,
+    // Populated only when the request appends credits/videos.
+    @Json(name = "genres") val genres: List<TmdbGenreDto>? = emptyList(),
+    @Json(name = "credits") val credits: TmdbCreditsDto? = null,
+    @Json(name = "videos") val videos: TmdbVideosDto? = null
 )
 
 @JsonClass(generateAdapter = true)
@@ -86,7 +90,13 @@ data class TmdbTvDetailDto(
     @Json(name = "backdrop_path") val backdropPath: String? = null,
     @Json(name = "status") val status: String? = null,
     @Json(name = "number_of_seasons") val numberOfSeasons: Int = 1,
-    @Json(name = "seasons") val seasons: List<TmdbSeasonDto>? = emptyList()
+    @Json(name = "seasons") val seasons: List<TmdbSeasonDto>? = emptyList(),
+    // Populated only when the request appends credits/videos.
+    @Json(name = "episode_run_time") val episodeRunTime: List<Int>? = emptyList(),
+    @Json(name = "genres") val genres: List<TmdbGenreDto>? = emptyList(),
+    @Json(name = "created_by") val createdBy: List<TmdbCreatorDto>? = emptyList(),
+    @Json(name = "credits") val credits: TmdbCreditsDto? = null,
+    @Json(name = "videos") val videos: TmdbVideosDto? = null
 )
 
 
@@ -141,6 +151,52 @@ data class TmdbGenreListDto(
 data class TmdbGenreDto(
     @Json(name = "id") val id: Int,
     @Json(name = "name") val name: String
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCreatorDto(
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "name") val name: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCreditsDto(
+    @Json(name = "cast") val cast: List<TmdbCastMemberDto>? = emptyList(),
+    @Json(name = "crew") val crew: List<TmdbCrewMemberDto>? = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCastMemberDto(
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "character") val character: String? = null,
+    @Json(name = "order") val order: Int? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbCrewMemberDto(
+    @Json(name = "id") val id: Int = 0,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "job") val job: String? = null,
+    @Json(name = "department") val department: String? = null
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbVideosDto(
+    @Json(name = "results") val results: List<TmdbVideoDto>? = emptyList()
+)
+
+@JsonClass(generateAdapter = true)
+data class TmdbVideoDto(
+    // TMDB reports ISO-639-1 (two letters), so "pt-BR" is matched as pt + country BR.
+    @Json(name = "iso_639_1") val language: String? = null,
+    @Json(name = "iso_3166_1") val country: String? = null,
+    @Json(name = "key") val key: String? = null,
+    @Json(name = "name") val name: String? = null,
+    @Json(name = "site") val site: String? = null,
+    @Json(name = "size") val size: Int? = null,
+    @Json(name = "type") val type: String? = null,
+    @Json(name = "official") val official: Boolean? = false
 )
 
 interface TmdbApi {
@@ -218,14 +274,16 @@ interface TmdbApi {
     suspend fun getMovieDetails(
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
-        @Query("language") language: String = "en-US"
+        @Query("language") language: String = "en-US",
+        @Query("append_to_response") appendToResponse: String? = null
     ): TmdbMovieDetailDto
 
     @GET("tv/{id}")
     suspend fun getTvDetails(
         @Path("id") id: Int,
         @Query("api_key") apiKey: String,
-        @Query("language") language: String = "en-US"
+        @Query("language") language: String = "en-US",
+        @Query("append_to_response") appendToResponse: String? = null
     ): TmdbTvDetailDto
 
     @GET("tv/{id}/season/{season_number}")

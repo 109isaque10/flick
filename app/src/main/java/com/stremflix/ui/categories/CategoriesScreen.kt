@@ -198,7 +198,6 @@ fun CategoriesScreen(
                                     shape = RoundedCornerShape(NetflixDimens.CardRadius)
                                 )
                                 .onFocusChanged { isFocused = it.isFocused }
-                                .focusable()
                                 .clickable { onGenreSelected(genre) }
                                 .padding(horizontal = 12.dp)
                         ) {

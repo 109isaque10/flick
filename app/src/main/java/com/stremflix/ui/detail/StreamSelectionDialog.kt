@@ -308,7 +308,6 @@ fun StreamCardItem(
                 shape = RoundedCornerShape(NetflixDimens.CardRadius)
             )
             .onFocusChanged { isFocused = it.isFocused }
-            .focusable()
             .clickable { onClick() }
             .padding(14.dp),
         verticalAlignment = Alignment.CenterVertically
