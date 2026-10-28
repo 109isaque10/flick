@@ -364,17 +364,40 @@ fun StremFlixBottomNavBar(
 
         // "More" exposes the destinations the bar cannot fit, instead of
         // jumping straight to Settings.
-        Box {
+        run {
             val overflowSelected = currentDestination in overflow
             NavigationBarItem(
                 selected = overflowSelected,
                 onClick = { moreOpen = true },
                 icon = {
-                    Icon(
-                        imageVector = Icons.Default.Menu,
-                        contentDescription = stringResource(R.string.nav_more),
-                        modifier = Modifier.size(22.dp)
-                    )
+                    Box {
+                        Icon(
+                            imageVector = Icons.Default.Menu,
+                            contentDescription = stringResource(R.string.nav_more),
+                            modifier = Modifier.size(22.dp)
+                        )
+                        DropdownMenu(
+                            expanded = moreOpen,
+                            onDismissRequest = { moreOpen = false },
+                            modifier = Modifier.background(NetflixDarkSurface)
+                        ) {
+                            overflow.forEach { dest ->
+                                DropdownMenuItem(
+                                    text = {
+                                        Text(
+                                            text = stringResource(dest.labelRes),
+                                            color = if (currentDestination == dest) NetflixWhite else NetflixLightGray,
+                                            fontWeight = if (currentDestination == dest) FontWeight.Bold else FontWeight.Normal
+                                        )
+                                    },
+                                    onClick = {
+                                        moreOpen = false
+                                        onDestinationSelected(dest)
+                                    }
+                                )
+                            }
+                        }
+                    }
                 },
                 label = {
                     Text(
@@ -392,28 +415,6 @@ fun StremFlixBottomNavBar(
                     unselectedTextColor = NetflixLightGray
                 )
             )
-
-            DropdownMenu(
-                expanded = moreOpen,
-                onDismissRequest = { moreOpen = false },
-                modifier = Modifier.background(NetflixDarkSurface)
-            ) {
-                overflow.forEach { dest ->
-                    DropdownMenuItem(
-                        text = {
-                            Text(
-                                text = stringResource(dest.labelRes),
-                                color = if (currentDestination == dest) NetflixWhite else NetflixLightGray,
-                                fontWeight = if (currentDestination == dest) FontWeight.Bold else FontWeight.Normal
-                            )
-                        },
-                        onClick = {
-                            moreOpen = false
-                            onDestinationSelected(dest)
-                        }
-                    )
-                }
-            }
         }
     }
 }

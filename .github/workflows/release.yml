@@ -140,10 +140,10 @@ jobs:
         run: |
           mkdir -p release-artifacts
           if ls app/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
-            cp app/build/outputs/apk/release/*.apk release-artifacts/Klassik-v${VERSION_NAME}-c${VERSION_CODE}-release.apk
+            cp app/build/outputs/apk/release/*.apk release-artifacts/StremFlix-v${VERSION_NAME}-c${VERSION_CODE}-release.apk
           fi
           if ls app/build/outputs/bundle/release/*.aab 1> /dev/null 2>&1; then
-            cp app/build/outputs/bundle/release/*.aab release-artifacts/Klassik-v${VERSION_NAME}-c${VERSION_CODE}-release.aab
+            cp app/build/outputs/bundle/release/*.aab release-artifacts/StremFlix-v${VERSION_NAME}-c${VERSION_CODE}-release.aab
           fi
           ls -lah release-artifacts/
 
@@ -160,15 +160,15 @@ jobs:
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION_NAME }}
-          name: Klassik v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
+          name: StremFlix v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
           draft: ${{ github.event_name == 'workflow_dispatch' }}
           prerelease: false
           files: release-artifacts/*
           body: |
-            ## Klassik Release v${{ env.VERSION_NAME }}
+            ## StremFlix Release v${{ env.VERSION_NAME }}
             - **Version Code**: `${{ env.VERSION_CODE }}`
             - **Commit**: `${{ github.sha }}`
-            - **Build Date**: `$(date -u)`
+            - **Build Date**: `${{ github.run_started_at }}`
 
             ### Downloads:
             - **APK**: For direct sideloading and testing on Android devices.
