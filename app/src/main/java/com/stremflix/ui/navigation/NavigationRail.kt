@@ -2,7 +2,7 @@ package com.stremflix.ui.navigation
 
 import android.app.Activity
 import androidx.annotation.StringRes
-import androidx.compose.animation.core.animateDpAsState
+
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -174,10 +174,11 @@ fun StremFlixNavRail(
     var railEngaged by remember { mutableStateOf(false) }
     var sawFocusLoss by remember { mutableStateOf(false) }
     val isRailFocused = railHasFocus && railEngaged
-    val railWidth by animateDpAsState(
-        targetValue = if (isRailFocused) NetflixDimens.RailWidthExpanded else NetflixDimens.RailWidthCollapsed,
-        label = "railWidth"
-    )
+    // Snap instead of animating: every animation frame remeasured the whole
+    // screen subtree (every poster row), which is what made the sidebar take
+    // seconds to unfurl on a TV box.
+    val railWidth =
+        if (isRailFocused) NetflixDimens.RailWidthExpanded else NetflixDimens.RailWidthCollapsed
     val context = LocalContext.current
 
     val destinations = remember {

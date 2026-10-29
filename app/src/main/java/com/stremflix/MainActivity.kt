@@ -64,7 +64,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /** Poster grid cap for TV search; the extra rows were never reachable by D-pad. */
-private const val SEARCH_RESULT_LIMIT = 40
+private const val SEARCH_RESULT_LIMIT = 15
 
 class MainActivity : ComponentActivity() {
 
@@ -342,7 +342,9 @@ fun MainAppContent(
     // Load Search Results (debounced so typing does not fire a request per keystroke)
     LaunchedEffect(searchQuery) {
         val query = searchQuery
-        if (query.isNotBlank()) {
+        // One character matches nearly everything and costs the same request as
+        // a real query on a TV stick, so wait for a minimally useful prefix.
+        if (query.trim().length >= 2) {
             delay(400)
             // The TV keyboard fires one change per key, so identical consecutive
             // queries (e.g. spaces trimmed by the field) reuse the last payload.

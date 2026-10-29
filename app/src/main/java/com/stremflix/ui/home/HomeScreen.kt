@@ -78,6 +78,12 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusTarget
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
+import androidx.compose.ui.input.key.onPreviewKeyEvent
+import androidx.compose.ui.input.key.type
 
 @Composable
 fun HomeScreen(
@@ -338,10 +344,14 @@ fun HeroSection(
     // Netflix opens on content, not chrome. Compose otherwise hands the initial
     // D-pad focus to the first focusable in the tree, which is the navigation
     // rail, so the app started with an expanded sidebar instead of Home.
-    val playFocusRequester = remember { FocusRequester() }
+    //
+    // The anchor sits at the top of the hero on purpose: requesting focus on the
+    // Play button made the LazyColumn scroll until the hero's upper half (and
+    // the artwork) left the viewport. OK on the anchor starts playback.
+    val heroFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
-        runCatching { playFocusRequester.requestFocus() }
+        runCatching { heroFocusRequester.requestFocus() }
     }
 
     Box(
@@ -349,6 +359,24 @@ fun HeroSection(
             .fillMaxWidth()
             .height(heroHeight)
     ) {
+        Box(
+            modifier = Modifier
+                .align(Alignment.TopStart)
+                .size(1.dp)
+                .focusRequester(heroFocusRequester)
+                .focusTarget()
+                .onPreviewKeyEvent { event ->
+                    if (event.type == KeyEventType.KeyDown &&
+                        (event.key == Key.DirectionCenter || event.key == Key.Enter)
+                    ) {
+                        onPlayClicked()
+                        true
+                    } else {
+                        false
+                    }
+                }
+        )
+
         AsyncImage(
             model = item.fullBackdropUrl ?: item.fullPosterUrl,
             contentDescription = item.title,
@@ -494,7 +522,6 @@ fun HeroSection(
                     shape = RoundedCornerShape(NetflixDimens.CardRadius),
                     contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
                     modifier = Modifier
-                        .focusRequester(playFocusRequester)
                         .onFocusChanged { playFocused = it.isFocused }
                 ) {
                     Icon(

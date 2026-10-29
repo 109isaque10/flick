@@ -34,6 +34,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.shape.CircleShape
@@ -199,6 +200,9 @@ fun PlayerScreen(
     var showSpeedMenu by remember { mutableStateOf(false) }
     var showAudioSubtitlesDialog by remember { mutableStateOf(false) }
     var showEpisodesDrawer by remember { mutableStateOf(false) }
+    // Season currently listed by the in-player drawer. Set from the playing
+    // episode every time the drawer opens so it never starts on season 1.
+    var drawerSeason by remember { mutableStateOf<Int?>(null) }
 
     var selectedAudioTrack by remember { mutableStateOf("") }
     var selectedSubtitleTrack by remember { mutableStateOf("Off") }
@@ -401,20 +405,38 @@ fun PlayerScreen(
     // node was focused, so remote keys (including OK) never reached this screen.
     // This sink is composed whenever the overlay is unavailable and restores it.
     val playerFocusSink = remember { FocusRequester() }
+    // Landing target inside the episodes drawer (the selected season chip), so
+    // opening the drawer actually moves D-pad focus off the player buttons.
+    val drawerFocusRequester = remember { FocusRequester() }
     LaunchedEffect(isControlsVisible, playerError) {
+        // The overlay's focus target leaves composition in the same frame the
+        // controls hide, so the sink may not be attached on the first attempt.
+        // Retrying is what makes OK bring the overlay back instead of being
+        // swallowed while nothing is focused.
+        repeat(3) {
+            withFrameNanos { }
+            val target =
+                if (isControlsVisible && playerError == null) controlsFocusRequester
+                else playerFocusSink
+            if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
+        }
+    }
+
+    LaunchedEffect(showEpisodesDrawer) {
         withFrameNanos { }
         runCatching {
-            if (isControlsVisible && playerError == null) {
+            if (showEpisodesDrawer) {
+                drawerFocusRequester.requestFocus()
+            } else if (isControlsVisible && playerError == null) {
                 controlsFocusRequester.requestFocus()
-            } else {
-                playerFocusSink.requestFocus()
             }
         }
     }
 
-    // Auto-hide controls timer
-    LaunchedEffect(isControlsVisible, lastInteractionTime) {
-        if (isControlsVisible) {
+    // Auto-hide controls timer. The drawer is part of the overlay, so it pins
+    // the controls visible while it is open.
+    LaunchedEffect(isControlsVisible, lastInteractionTime, showEpisodesDrawer) {
+        if (isControlsVisible && !showEpisodesDrawer) {
             delay(8000)
             isControlsVisible = false
         }
@@ -999,7 +1021,12 @@ fun PlayerScreen(
                             PlayerAction(
                                 icon = Icons.Default.VideoLibrary,
                                 label = stringResource(R.string.title_episodes),
-                                onClick = { showEpisodesDrawer = true },
+                                onClick = {
+                                    drawerSeason = currentSeasonNumber
+                                        ?: episodes.firstOrNull()?.seasonNumber
+                                    showEpisodesDrawer = true
+                                    lastInteractionTime = System.currentTimeMillis()
+                                },
                                 onInteracted = { lastInteractionTime = System.currentTimeMillis() }
                             )
                         }
@@ -1140,7 +1167,11 @@ fun PlayerScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(NetflixBlack.copy(alpha = 0.65f))
-                    .clickable { showEpisodesDrawer = false }
+                    // Pointer-only so the scrim never becomes a focus target
+                    // inside the drawer's focus group.
+                    .pointerInput(Unit) {
+                        detectTapGestures { showEpisodesDrawer = false }
+                    }
             ) {
                 Box(
                     modifier = Modifier
@@ -1148,11 +1179,11 @@ fun PlayerScreen(
                         .fillMaxHeight()
                         .width(360.dp)
                         .background(NetflixDarkSurface.copy(alpha = 0.98f))
-                        // Consume taps inside the sheet without dimming or closing it.
-                        .clickable(
-                            interactionSource = remember { MutableInteractionSource() },
-                            indication = null
-                        ) {}
+                        // Consume taps inside the sheet without dimming or
+                        // closing it, and without adding a focus target.
+                        .pointerInput(Unit) {
+                            detectTapGestures { }
+                        }
                         .padding(16.dp)
                 ) {
                     Column(modifier = Modifier.fillMaxSize()) {
@@ -1182,7 +1213,65 @@ fun PlayerScreen(
                         Spacer(modifier = Modifier.height(12.dp))
 
                         val distinctEpisodes = episodes.distinctBy { it.id }
-                        if (distinctEpisodes.isEmpty()) {
+                        val drawerSeasons =
+                            (seasons.map { it.seasonNumber } + distinctEpisodes.map { it.seasonNumber })
+                                .distinct()
+                                .sorted()
+                        // Never open on a season that has no episodes, and default
+                        // to the season being watched.
+                        val activeSeason = drawerSeason
+                            ?: currentSeasonNumber
+                            ?: drawerSeasons.firstOrNull()
+                        val shownEpisodes = activeSeason?.let { season ->
+                            distinctEpisodes.filter { it.seasonNumber == season }
+                        } ?: distinctEpisodes
+
+                        if (drawerSeasons.isNotEmpty()) {
+                            LazyRow(
+                                modifier = Modifier.fillMaxWidth(),
+                                horizontalArrangement = Arrangement.spacedBy(8.dp)
+                            ) {
+                                items(drawerSeasons) { seasonNumber ->
+                                    val isSelected = seasonNumber == activeSeason
+                                    var chipFocused by remember { mutableStateOf(false) }
+                                    Box(
+                                        modifier = Modifier
+                                            .clip(RoundedCornerShape(4.dp))
+                                            .background(
+                                                if (isSelected) NetflixRed else NetflixDarkSurface
+                                            )
+                                            .border(
+                                                width = if (chipFocused) 2.dp else 0.dp,
+                                                color = if (chipFocused) NetflixWhite else Color.Transparent,
+                                                shape = RoundedCornerShape(4.dp)
+                                            )
+                                            .onFocusChanged { chipFocused = it.isFocused }
+                                            .clickable {
+                                                drawerSeason = seasonNumber
+                                                lastInteractionTime = System.currentTimeMillis()
+                                            }
+                                            .then(
+                                                if (isSelected) {
+                                                    Modifier.focusRequester(drawerFocusRequester)
+                                                } else {
+                                                    Modifier
+                                                }
+                                            )
+                                            .padding(horizontal = 14.dp, vertical = 8.dp)
+                                    ) {
+                                        Text(
+                                            text = "Season $seasonNumber",
+                                            color = NetflixWhite,
+                                            fontSize = 13.sp,
+                                            fontWeight = FontWeight.Bold
+                                        )
+                                    }
+                                }
+                            }
+                            Spacer(modifier = Modifier.height(12.dp))
+                        }
+
+                        if (shownEpisodes.isEmpty()) {
                             Box(
                                 modifier = Modifier.fillMaxSize(),
                                 contentAlignment = Alignment.Center
@@ -1199,7 +1288,7 @@ fun PlayerScreen(
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 itemsIndexed(
-                                    distinctEpisodes,
+                                    shownEpisodes,
                                     key = { _, ep -> "${ep.seasonNumber}_${ep.episodeNumber}" }
                                 ) { _, ep ->
                                     val isCurrent = ep.seasonNumber == (currentSeasonNumber

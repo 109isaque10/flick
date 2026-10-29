@@ -303,18 +303,16 @@ fun SearchScreen(
 
                 Spacer(modifier = Modifier.height(14.dp))
 
-                // QWERTY TV keyboard. Keys use a fixed height (~40dp) and share the
-                // row width by weight, so 10-key rows fit inside the 320dp pane.
-                // Rows 2 and 3 are inset with weighted spacers to look staggered
-                // while keeping key widths aligned with row 1.
+                // QWERTY TV keyboard laid out as a Netflix-style matrix: every row
+                // shares the same column count, so keys line up vertically instead
+                // of being staggered with per-row insets.
                 val keyboardRows = listOf(
                     listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
                     listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
                     listOf("Z", "X", "C", "V", "B", "N", "M"),
                     listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
                 )
-                // Left/right inset per row, measured in key widths.
-                val keyboardInsets = listOf(0f, 0.5f, 1.5f, 0f)
+                val keyboardColumnCount = 10
                 val keyHeight = 40.dp
                 val keyShape = RoundedCornerShape(4.dp)
 
@@ -327,10 +325,6 @@ fun SearchScreen(
                             modifier = Modifier.fillMaxWidth(),
                             horizontalArrangement = Arrangement.spacedBy(6.dp)
                         ) {
-                            val inset = keyboardInsets[rowIndex]
-                            if (inset > 0f) {
-                                Spacer(modifier = Modifier.weight(inset))
-                            }
                             rowKeys.forEachIndexed { keyIndex, charKey ->
                                 var isKeyFocused by remember { mutableStateOf(false) }
                                 Box(
@@ -365,8 +359,8 @@ fun SearchScreen(
                                     )
                                 }
                             }
-                            if (inset > 0f) {
-                                Spacer(modifier = Modifier.weight(inset))
+                            repeat(keyboardColumnCount - rowKeys.size) {
+                                Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }

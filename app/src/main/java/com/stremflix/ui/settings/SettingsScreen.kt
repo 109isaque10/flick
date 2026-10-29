@@ -364,8 +364,7 @@ fun SettingsScreen(
                 currentValue = completionThreshold,
                 onValueChange = onSaveCompletionThreshold,
                 min = 50,
-                max = 98,
-                step = 5
+                max = 98
             )
 
             Spacer(modifier = Modifier.height(20.dp))
@@ -386,8 +385,7 @@ fun SettingsScreen(
                 currentValue = upNextThreshold,
                 onValueChange = onSaveUpNextThreshold,
                 min = 50,
-                max = 98,
-                step = 5
+                max = 98
             )
 
             Spacer(modifier = Modifier.height(28.dp))
@@ -503,8 +501,7 @@ fun ThresholdStepper(
     currentValue: Int,
     onValueChange: (Int) -> Unit,
     min: Int = 50,
-    max: Int = 100,
-    step: Int = 5
+    max: Int = 100
 ) {
     Column(
         modifier = Modifier
@@ -537,7 +534,9 @@ fun ThresholdStepper(
         // Discrete choices instead of a Slider. A Slider cannot be driven by a
         // TV remote: D-pad focus could land on the track but left/right never
         // resolved to a value, so these thresholds could not be changed at all.
-        val presets = listOf(70, 85, 95).filter { it in min..max }
+        // Presets plus ±1/±10 buttons keep 1% precision reachable (97% used to
+        // require impossible 5% arithmetic) without a long row of chips.
+        val presets = listOf(70, 85, 90, 95, 97).filter { it in min..max }
             .ifEmpty { listOf(min, max) }
 
         Row(
@@ -545,12 +544,6 @@ fun ThresholdStepper(
             horizontalArrangement = Arrangement.spacedBy(8.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            ThresholdChip(
-                text = "\u2212",
-                selected = false,
-                enabled = currentValue > min,
-                onClick = { onValueChange((currentValue - step).coerceAtLeast(min)) }
-            )
             presets.forEach { preset ->
                 ThresholdChip(
                     text = "$preset%",
@@ -559,11 +552,38 @@ fun ThresholdStepper(
                     onClick = { onValueChange(preset) }
                 )
             }
+        }
+
+        Spacer(modifier = Modifier.height(8.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
             ThresholdChip(
-                text = "+",
+                text = "\u221210",
+                selected = false,
+                enabled = currentValue > min,
+                onClick = { onValueChange((currentValue - 10).coerceAtLeast(min)) }
+            )
+            ThresholdChip(
+                text = "\u22121",
+                selected = false,
+                enabled = currentValue > min,
+                onClick = { onValueChange((currentValue - 1).coerceAtLeast(min)) }
+            )
+            ThresholdChip(
+                text = "+1",
                 selected = false,
                 enabled = currentValue < max,
-                onClick = { onValueChange((currentValue + step).coerceAtMost(max)) }
+                onClick = { onValueChange((currentValue + 1).coerceAtMost(max)) }
+            )
+            ThresholdChip(
+                text = "+10",
+                selected = false,
+                enabled = currentValue < max,
+                onClick = { onValueChange((currentValue + 10).coerceAtMost(max)) }
             )
         }
     }
