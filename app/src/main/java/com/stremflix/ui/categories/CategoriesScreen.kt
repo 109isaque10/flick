@@ -25,8 +25,9 @@ import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Text
+
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -42,6 +43,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.stremflix.R
 import com.stremflix.data.model.MediaItem
+import com.stremflix.ui.components.TvSpinner
 import com.stremflix.ui.home.PosterCard
 import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixBorderHighlight
@@ -56,6 +58,7 @@ import com.stremflix.ui.theme.isCompactScreen
 
 data class GenreItem(val id: Int, val name: String)
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun CategoriesScreen(
     genres: List<GenreItem>,
@@ -121,7 +124,7 @@ fun CategoriesScreen(
                         .weight(1f),
                     contentAlignment = Alignment.Center
                 ) {
-                    CircularProgressIndicator(color = NetflixRed, modifier = Modifier.size(44.dp))
+                    TvSpinner(color = NetflixRed, size = 44.dp)
                 }
             } else if (categoryItems.isEmpty()) {
                 Box(
@@ -242,7 +245,7 @@ fun CategoriesScreen(
                         modifier = Modifier.fillMaxSize(),
                         contentAlignment = Alignment.Center
                     ) {
-                        CircularProgressIndicator(color = NetflixRed, modifier = Modifier.size(44.dp))
+                        TvSpinner(color = NetflixRed, size = 44.dp)
                     }
                 } else if (categoryItems.isEmpty()) {
                     Box(

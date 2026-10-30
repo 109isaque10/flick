@@ -1,36 +1,31 @@
 package com.stremflix.ui.settings
 
 import android.view.KeyEvent
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.ArrowDropDown
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Checkbox
-import androidx.compose.material3.CheckboxDefaults
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -39,14 +34,21 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.input.key.Key
+import androidx.compose.ui.input.key.KeyEventType
+import androidx.compose.ui.input.key.key
 import androidx.compose.ui.input.key.onKeyEvent
+import androidx.compose.ui.input.key.type
 import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.platform.LocalSoftwareKeyboardController
 import androidx.compose.ui.res.stringResource
@@ -56,6 +58,8 @@ import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.window.Dialog
+import androidx.compose.ui.window.DialogProperties
 import com.stremflix.R
 import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixBorderHighlight
@@ -97,6 +101,37 @@ val SUPPORTED_COUNTRIES = listOf(
     CountryOption("MX", "Mexico")
 )
 
+/** TV settings sections. The rail shows these; the right pane shows one at a time. */
+private enum class SettingsCategory(val label: String) {
+    GENERAL("General"),
+    STREAMING("Streaming & Addons"),
+    PLAYBACK("Playback"),
+    ACCOUNTS("Accounts")
+}
+
+private val ALL_CATEGORIES = listOf(
+    SettingsCategory.GENERAL,
+    SettingsCategory.STREAMING,
+    SettingsCategory.PLAYBACK,
+    SettingsCategory.ACCOUNTS
+)
+
+/**
+ * Step size for the Apple-TV style threshold row: coarse far from the target,
+ * fine near the top. 5% -> 2% -> 1% keeps 97% reachable without a row of chips.
+ */
+private fun stepThreshold(value: Int, direction: Int, min: Int, max: Int): Int {
+    val delta = when {
+        value < 90 -> 5
+        value < 95 -> 2
+        else -> 1
+    }
+    return (value + direction * delta).coerceIn(min, max)
+}
+
+private val THRESHOLD_PRESETS = listOf(75, 80, 85, 90, 95)
+
+@OptIn(ExperimentalComposeUiApi::class)
 @Composable
 fun SettingsScreen(
     tmdbApiKey: String,
@@ -131,475 +166,726 @@ fun SettingsScreen(
     modifier: Modifier = Modifier
 ) {
     val isMobile = isCompactScreen()
-    val screenPadding = if (isMobile) 16.dp else 40.dp
+    var category by remember { mutableStateOf(SettingsCategory.GENERAL) }
 
-    // Enter the screen on the first setting, not on the invisible content
-    // container left behind by sidebar navigation.
-    val firstSettingRequester = remember { FocusRequester() }
-    LaunchedEffect(isMobile) {
+    // First control of the active pane. Only one category is composed at a time
+    // on TV, so a single requester can never be attached to two live nodes.
+    val firstControl = remember { FocusRequester() }
+    val firstControlModifier: Modifier =
+        if (isMobile) Modifier else Modifier.focusRequester(firstControl)
+
+    LaunchedEffect(category, isMobile) {
         if (!isMobile) {
             withFrameNanos { }
-            runCatching { firstSettingRequester.requestFocus() }
+            runCatching { firstControl.requestFocus() }
         }
     }
 
-    LazyColumn(
-        modifier = modifier
-            .fillMaxSize()
-            .background(NetflixBlack)
-            .statusBarsPadding()
-            .padding(screenPadding)
-    ) {
-        item {
-            Text(
-                text = stringResource(R.string.settings_title),
-                color = NetflixWhite,
-                fontSize = if (isMobile) 22.sp else 28.sp,
-                fontWeight = FontWeight.Bold
-            )
-
-            Spacer(modifier = Modifier.height(4.dp))
-
-            Text(
-                text = "Settings auto-save automatically. Use D-pad selectors or tap to configure.",
-                color = NetflixLightGray,
-                fontSize = 12.sp
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        item {
-            // TMDB API Key Section
-            SettingsSectionHeader(title = "TMDB API Key (Required)")
-            Text(
-                text = "Enter your personal TMDB API key to load movies, series, and artwork.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            AutoSaveInputField(
-                initialValue = tmdbApiKey,
-                placeholder = "Enter TMDB API Key (e.g. 3fd2be6f...)",
-                onSave = onSaveTmdbApiKey,
-                modifier = Modifier.focusRequester(firstSettingRequester)
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-        }
-
-        item {
-            // TMDB Language & Region Dropdowns
-            SettingsSectionHeader(title = "TMDB Language & Country / Region")
-            Text(
-                text = "Controls metadata language and regional release popular rankings.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-
-            if (isMobile) {
-                Column(verticalArrangement = Arrangement.spacedBy(12.dp)) {
-                    LanguageDropdownMenu(
-                        selectedCode = tmdbLanguage,
-                        onSelectLanguage = onSaveTmdbLanguage,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                    CountryDropdownMenu(
-                        selectedCode = tmdbRegion,
-                        onSelectCountry = onSaveTmdbRegion,
-                        modifier = Modifier.fillMaxWidth()
-                    )
-                }
-            } else {
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(16.dp)
-                ) {
-                    LanguageDropdownMenu(
-                        selectedCode = tmdbLanguage,
-                        onSelectLanguage = onSaveTmdbLanguage,
-                        modifier = Modifier.weight(1f)
-                    )
-                    CountryDropdownMenu(
-                        selectedCode = tmdbRegion,
-                        onSelectCountry = onSaveTmdbRegion,
-                        modifier = Modifier.weight(1f)
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        item {
-            // Stremio Addon Base URL Section
-            SettingsSectionHeader(title = "Stremio Addon Base URL")
-            Text(
-                text = "Custom Stremio addon manifest endpoint URL for resolving streams.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            AutoSaveInputField(
-                initialValue = stremioAddonUrl,
-                placeholder = "e.g. https://torrentio.strem.fun/",
-                onSave = onSaveStremioAddonUrl
-            )
-
-            Spacer(modifier = Modifier.height(24.dp))
-        }
-
-        item {
-            // OMDB API Key Section
-            SettingsSectionHeader(title = "OMDb Ratings Integration")
-            Text(
-                text = "Entering an OMDb API key automatically enables fetching Rotten Tomatoes, Metacritic, and IMDb rating clusters.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            AutoSaveInputField(
-                initialValue = omdbApiKey,
-                placeholder = "Enter OMDb API Key (e.g. 1a2b3c4d)",
-                onSave = onSaveOmdbApiKey
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-
-        item {
-            // Rating Provider Clusters Selection
-            SettingsSectionHeader(title = "Display Rating Providers")
-
-            val allProviders = listOf("IMDb", "TMDB", "Rotten Tomatoes", "Metacritic", "Netflix")
-            allProviders.forEach { provider ->
-                val isChecked = selectedProviders.contains(provider)
-                var rowFocused by remember { mutableStateOf(false) }
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .background(
-                            if (rowFocused) NetflixDarkSurface else NetflixBlack,
-                            RoundedCornerShape(4.dp)
-                        )
-                        .border(
-                            width = if (rowFocused) 2.dp else 1.dp,
-                            color = if (rowFocused) NetflixBorderHighlight else NetflixBlack,
-                            shape = RoundedCornerShape(4.dp)
-                        )
-                        .onFocusChanged { rowFocused = it.isFocused || it.hasFocus }
-                        .clickable { onToggleProvider(provider) }
-                        .padding(horizontal = 8.dp, vertical = 6.dp),
-                    verticalAlignment = Alignment.CenterVertically
-                ) {
-                    Checkbox(
-                        checked = isChecked,
-                        onCheckedChange = { onToggleProvider(provider) },
-                        colors = CheckboxDefaults.colors(
-                            checkedColor = NetflixRed,
-                            uncheckedColor = NetflixLightGray
-                        )
-                    )
-                    Spacer(modifier = Modifier.width(8.dp))
-                    Text(
-                        text = provider,
-                        color = NetflixWhite,
-                        fontSize = 15.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-
-        item {
-            // Stremio Stream ID Strategy
-            SettingsSectionHeader(title = "Stremio Stream Resolution ID Strategy")
-
-            if (isMobile) {
-                Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
-                    StremioStrategyButtons(stremioIdStrategy, onSelectStremioStrategy)
-                }
-            } else {
-                Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                    StremioStrategyButtons(stremioIdStrategy, onSelectStremioStrategy)
-                }
-            }
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-
-        item {
-            // YouTube Trailer Backend
-            SettingsSectionHeader(title = "YouTube Trailer Backend")
-            Text(
-                text = "Base URL of your YouTube backend (e.g. http://192.168.1.10:8000). Trailers are loaded from /api/video/{id}/download.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            AutoSaveInputField(
-                initialValue = youtubeBackendUrl,
-                placeholder = "Enter backend base URL (e.g. http://127.0.0.1:8000)",
-                onSave = onSaveYoutubeBackendUrl
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-
-        item {
-            // Playback & Next Episode Thresholds (D-pad Friendly Stepper)
-            SettingsSectionHeader(title = "Playback & Next Episode Thresholds")
-
-            Text(
-                text = "When an episode reaches this progress %, clicking Play advances to the next episode. Below this, clicking Play resumes current episode.",
-                color = NetflixLightGray,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 10.dp)
-            )
-
-            ThresholdStepper(
-                label = "Episode Completion Threshold",
-                currentValue = completionThreshold,
-                onValueChange = onSaveCompletionThreshold,
-                min = 50,
-                max = 98
-            )
-
-            Spacer(modifier = Modifier.height(20.dp))
-
-            Text(
-                text = "Triggers the Up Next overlay near end of video. Stream preloading automatically triggers 5% prior (${
-                    (upNextThreshold - 5).coerceAtLeast(
-                        10
-                    )
-                }%).",
-                color = NetflixLightGray,
-                fontSize = 12.sp,
-                modifier = Modifier.padding(bottom = 10.dp)
-            )
-
-            ThresholdStepper(
-                label = "Up Next Popup Trigger Threshold",
-                currentValue = upNextThreshold,
-                onValueChange = onSaveUpNextThreshold,
-                min = 50,
-                max = 98
-            )
-
-            Spacer(modifier = Modifier.height(28.dp))
-        }
-
-        item {
-            // Trakt.tv Integration & API Key
-            SettingsSectionHeader(title = stringResource(R.string.trakt_account_title))
-            Text(
-                text = "Trakt Client ID and Client Secret from your Trakt API app. Both are required for device pairing.",
-                color = NetflixLightGray,
-                fontSize = 13.sp,
-                modifier = Modifier.padding(bottom = 8.dp)
-            )
-            AutoSaveInputField(
-                initialValue = traktApiKey,
-                placeholder = "Enter Trakt Client ID / API Key",
-                onSave = onSaveTraktApiKey
-            )
-
-            Spacer(modifier = Modifier.height(12.dp))
-
-            AutoSaveInputField(
-                initialValue = traktClientSecret,
-                placeholder = "Enter Trakt Client Secret",
-                onSave = onSaveTraktClientSecret
-            )
-
-            Spacer(modifier = Modifier.height(16.dp))
-
-            var connectFocused by remember { mutableStateOf(false) }
-            var disconnectFocused by remember { mutableStateOf(false) }
-
-            if (!traktUsername.isNullOrBlank()) {
+    // The pane body closes over every parameter, so it can be shared by the TV
+    // two-pane layout and the mobile single-column layout without threading
+    // thirty arguments through another composable.
+    val body: @Composable (Modifier, Boolean, List<SettingsCategory>) -> Unit = { m, mobile, cats ->
+        LazyColumn(
+            modifier = m.focusRestorer(),
+            contentPadding = PaddingValues(bottom = 48.dp),
+            verticalArrangement = Arrangement.spacedBy(12.dp)
+        ) {
+            item {
                 Text(
-                    text = stringResource(R.string.trakt_connected_status, traktUsername),
-                    color = NetflixRed,
-                    fontSize = 16.sp,
+                    text = stringResource(R.string.settings_title),
+                    color = NetflixWhite,
+                    fontSize = if (mobile) 22.sp else 28.sp,
                     fontWeight = FontWeight.Bold
                 )
-                Spacer(modifier = Modifier.height(12.dp))
-                OutlinedButton(
-                    onClick = onDisconnectTrakt,
-                    shape = RoundedCornerShape(4.dp),
-                    modifier = Modifier
-                        .border(
-                            width = if (disconnectFocused) 2.dp else 0.dp,
-                            color = if (disconnectFocused) NetflixWhite else Color.Transparent,
-                            shape = RoundedCornerShape(4.dp)
-                        )
-                        .onFocusChanged { disconnectFocused = it.isFocused || it.hasFocus }
-                ) {
-                    Text(text = stringResource(R.string.action_disconnect), color = NetflixWhite)
+                Spacer(modifier = Modifier.height(4.dp))
+                Text(
+                    text = if (mobile) {
+                        "Settings auto-save automatically. Use D-pad selectors or tap to configure."
+                    } else {
+                        "Use ◀ ▶ to change a value, OK to cycle presets or open a list. Everything auto-saves."
+                    },
+                    color = NetflixLightGray,
+                    fontSize = 12.sp
+                )
+                Spacer(modifier = Modifier.height(20.dp))
+            }
+
+            if (SettingsCategory.GENERAL in cats) {
+                item {
+                    SettingsSectionHeader(title = "TMDB API Key (Required)")
+                    SettingHint("Enter your personal TMDB API key to load movies, series, and artwork.")
+                    AutoSaveInputField(
+                        initialValue = tmdbApiKey,
+                        placeholder = "Enter TMDB API Key (e.g. 3fd2be6f...)",
+                        onSave = onSaveTmdbApiKey,
+                        modifier = firstControlModifier
+                    )
                 }
-            } else {
-                if (!traktDeviceCode.isNullOrBlank() && !traktVerificationUrl.isNullOrBlank()) {
-                    Column(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .background(NetflixCardSurface, RoundedCornerShape(8.dp))
-                            .padding(16.dp)
-                    ) {
-                        Text(
-                            text = stringResource(
-                                R.string.settings_trakt_step_visit_format,
-                                traktVerificationUrl
-                            ),
-                            color = NetflixWhite,
-                            fontSize = 15.sp,
-                            fontWeight = FontWeight.Bold
+
+                item {
+                    SettingsSectionHeader(title = "TMDB Language & Country / Region")
+                    SettingHint("Controls metadata language and regional release popularity rankings.")
+                    TvCyclicSelector(
+                        label = "Audio & Subtitle Language",
+                        options = SUPPORTED_LANGUAGES.map { it.code to it.name },
+                        selectedCode = tmdbLanguage,
+                        onSelect = onSaveTmdbLanguage
+                    )
+                    Spacer(modifier = Modifier.height(10.dp))
+                    TvCyclicSelector(
+                        label = "Country / Region",
+                        options = SUPPORTED_COUNTRIES.map { it.code to it.name },
+                        selectedCode = tmdbRegion,
+                        onSelect = onSaveTmdbRegion
+                    )
+                }
+
+                item {
+                    SettingsSectionHeader(title = "Display Rating Providers")
+                    SettingHint("Choose which rating sources appear on the details screen.")
+                    listOf("IMDb", "TMDB", "Rotten Tomatoes", "Metacritic", "Netflix").forEach { provider ->
+                        TvToggleRow(
+                            label = provider,
+                            checked = selectedProviders.contains(provider),
+                            onToggle = { onToggleProvider(provider) }
                         )
-                        Spacer(modifier = Modifier.height(6.dp))
-                        Text(
-                            text = stringResource(
-                                R.string.settings_trakt_step_code_format,
-                                traktDeviceCode
-                            ),
-                            color = NetflixRed,
-                            fontSize = 22.sp,
-                            fontWeight = FontWeight.Black,
-                            letterSpacing = 2.sp
-                        )
+                        Spacer(modifier = Modifier.height(8.dp))
                     }
-                } else {
-                    Button(
-                        onClick = onRequestTraktPairing,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = NetflixRed,
-                            contentColor = NetflixWhite
-                        ),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier
-                            .border(
-                                width = if (connectFocused) 2.dp else 0.dp,
-                                color = if (connectFocused) NetflixWhite else Color.Transparent,
-                                shape = RoundedCornerShape(4.dp)
-                            )
-                            .onFocusChanged { connectFocused = it.isFocused || it.hasFocus }
-                    ) {
-                        Text(text = stringResource(R.string.action_connect), fontWeight = FontWeight.Bold)
-                    }
+                }
+
+                item {
+                    SettingsSectionHeader(title = "OMDb Ratings Integration")
+                    SettingHint("An OMDb key enables Rotten Tomatoes, Metacritic and IMDb rating clusters.")
+                    AutoSaveInputField(
+                        initialValue = omdbApiKey,
+                        placeholder = "Enter OMDb API Key (e.g. 1a2b3c4d)",
+                        onSave = onSaveOmdbApiKey
+                    )
                 }
             }
 
-            Spacer(modifier = Modifier.height(40.dp))
+            if (SettingsCategory.STREAMING in cats) {
+                item {
+                    SettingsSectionHeader(title = "Stremio Addon Base URL")
+                    SettingHint("Custom Stremio addon manifest endpoint used to resolve streams.")
+                    AutoSaveInputField(
+                        initialValue = stremioAddonUrl,
+                        placeholder = "e.g. https://torrentio.strem.fun/",
+                        onSave = onSaveStremioAddonUrl,
+                        modifier = firstControlModifier
+                    )
+                }
+
+                item {
+                    SettingsSectionHeader(title = "Stremio Stream Resolution ID Strategy")
+                    SettingHint("Which identifier is sent to the addon when resolving a stream.")
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TvChoiceButton(
+                            text = "IMDb IDs (tt1234567)",
+                            selected = stremioIdStrategy == "IMDB",
+                            onClick = { onSelectStremioStrategy("IMDB") }
+                        )
+                        TvChoiceButton(
+                            text = "TMDB IDs (tmdb:123)",
+                            selected = stremioIdStrategy == "TMDB",
+                            onClick = { onSelectStremioStrategy("TMDB") }
+                        )
+                    }
+                }
+
+                item {
+                    SettingsSectionHeader(title = "YouTube Trailer Backend")
+                    SettingHint("Base URL of your YouTube backend. Trailers load from /api/video/{id}/download.")
+                    AutoSaveInputField(
+                        initialValue = youtubeBackendUrl,
+                        placeholder = "Enter backend base URL (e.g. http://127.0.0.1:8000)",
+                        onSave = onSaveYoutubeBackendUrl
+                    )
+                }
+            }
+
+            if (SettingsCategory.PLAYBACK in cats) {
+                item {
+                    SettingsSectionHeader(title = "Playback & Next Episode Thresholds")
+                    SettingHint(
+                        "When an episode reaches this progress %, clicking Play advances to the next " +
+                            "episode. Below it, Play resumes the current one."
+                    )
+                    TvThresholdRow(
+                        label = "Episode Completion Threshold",
+                        currentValue = completionThreshold,
+                        onValueChange = onSaveCompletionThreshold,
+                        min = 50,
+                        max = 98,
+                        modifier = firstControlModifier
+                    )
+                }
+
+                item {
+                    SettingHint(
+                        "Triggers the Up Next overlay near the end of a video. Stream preloading " +
+                            "starts 5% earlier (${(upNextThreshold - 5).coerceAtLeast(10)}%)."
+                    )
+                    TvThresholdRow(
+                        label = "Up Next Popup Trigger Threshold",
+                        currentValue = upNextThreshold,
+                        onValueChange = onSaveUpNextThreshold,
+                        min = 50,
+                        max = 99
+                    )
+                }
+            }
+
+            if (SettingsCategory.ACCOUNTS in cats) {
+                item {
+                    SettingsSectionHeader(title = stringResource(R.string.trakt_account_title))
+                    SettingHint("Trakt Client ID and Client Secret from your Trakt API app. Both are required for device pairing.")
+                    AutoSaveInputField(
+                        initialValue = traktApiKey,
+                        placeholder = "Enter Trakt Client ID / API Key",
+                        onSave = onSaveTraktApiKey,
+                        modifier = firstControlModifier
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AutoSaveInputField(
+                        initialValue = traktClientSecret,
+                        placeholder = "Enter Trakt Client Secret",
+                        onSave = onSaveTraktClientSecret
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (!traktUsername.isNullOrBlank()) {
+                        Text(
+                            text = stringResource(R.string.trakt_connected_status, traktUsername),
+                            color = NetflixRed,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TvActionButton(
+                            text = stringResource(R.string.action_disconnect),
+                            onClick = onDisconnectTrakt
+                        )
+                    } else if (!traktDeviceCode.isNullOrBlank() && !traktVerificationUrl.isNullOrBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(NetflixCardSurface, RoundedCornerShape(8.dp))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_trakt_step_visit_format,
+                                    traktVerificationUrl
+                                ),
+                                color = NetflixWhite,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_trakt_step_code_format,
+                                    traktDeviceCode
+                                ),
+                                color = NetflixRed,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 2.sp
+                            )
+                        }
+                    } else {
+                        TvActionButton(
+                            text = stringResource(R.string.action_connect),
+                            onClick = onRequestTraktPairing
+                        )
+                    }
+                }
+            }
+        }
+    }
+
+    if (isMobile) {
+        Box(
+            modifier = modifier
+                .fillMaxSize()
+                .background(NetflixBlack)
+                .statusBarsPadding()
+                .padding(16.dp)
+        ) {
+            body(Modifier.fillMaxSize(), true, ALL_CATEGORIES)
+        }
+    } else {
+        Row(
+            modifier = modifier
+                .fillMaxSize()
+                .background(NetflixBlack)
+                .statusBarsPadding()
+                .padding(horizontal = 48.dp, vertical = 27.dp),
+            horizontalArrangement = Arrangement.spacedBy(40.dp)
+        ) {
+            Column(
+                modifier = Modifier
+                    .width(240.dp)
+                    .fillMaxHeight()
+                    .focusRestorer()
+            ) {
+                Text(
+                    text = stringResource(R.string.settings_title),
+                    color = NetflixWhite,
+                    fontSize = 24.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(start = 4.dp, bottom = 16.dp)
+                )
+                ALL_CATEGORIES.forEach { c ->
+                    CategoryItem(
+                        label = c.label,
+                        selected = category == c,
+                        onClick = { category = c }
+                    )
+                    Spacer(modifier = Modifier.height(8.dp))
+                }
+            }
+
+            body(Modifier.weight(1f).fillMaxHeight(), false, listOf(category))
         }
     }
 }
 
 @Composable
-fun ThresholdStepper(
+private fun CategoryItem(
+    label: String,
+    selected: Boolean,
+    onClick: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val shape = RoundedCornerShape(6.dp)
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .height(NetflixDimens.RailItemHeight)
+            .clip(shape)
+            .background(
+                when {
+                    focused -> NetflixWhite.copy(alpha = 0.12f)
+                    selected -> NetflixDarkSurface
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) NetflixWhite else Color.Transparent,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Box(
+            modifier = Modifier
+                .width(3.dp)
+                .height(22.dp)
+                .background(
+                    color = if (selected) NetflixRed else Color.Transparent,
+                    shape = RoundedCornerShape(2.dp)
+                )
+        )
+        Spacer(modifier = Modifier.width(12.dp))
+        Text(
+            text = label,
+            color = if (selected || focused) NetflixWhite else NetflixLightGray,
+            fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+            maxLines = 1
+        )
+    }
+}
+
+/**
+ * Apple TV / Netflix style stepper: one focusable row, no chip clutter.
+ *
+ * D-pad LEFT/RIGHT adjust by 5% below 90, 2% up to 95 and 1% above it, so both
+ * coarse and 1%-precise edits are reachable from the remote. OK cycles presets.
+ */
+@Composable
+fun TvThresholdRow(
     label: String,
     currentValue: Int,
     onValueChange: (Int) -> Unit,
     min: Int = 50,
-    max: Int = 100
+    max: Int = 99,
+    modifier: Modifier = Modifier
 ) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "thresholdScale")
+    val shape = RoundedCornerShape(8.dp)
+    val presets = remember(min, max) { THRESHOLD_PRESETS.filter { it in min..max } }
+    val fraction = (((currentValue - min).toFloat() / (max - min).toFloat()).coerceIn(0f, 1f))
+        .coerceAtLeast(0.02f)
+
+    fun cyclePreset() {
+        val next = presets.firstOrNull { it > currentValue } ?: presets.firstOrNull() ?: currentValue
+        onValueChange(next)
+    }
+
     Column(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
-            .background(NetflixDarkSurface, RoundedCornerShape(8.dp))
-            .border(1.dp, NetflixBorderHighlight, RoundedCornerShape(8.dp))
-            .padding(14.dp)
+            .scale(scale)
+            .clip(shape)
+            .background(if (focused) NetflixDarkSurface else NetflixCardSurface)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) NetflixWhite else NetflixBorderHighlight,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        onValueChange(stepThreshold(currentValue, -1, min, max)); true
+                    }
+
+                    Key.DirectionRight -> {
+                        onValueChange(stepThreshold(currentValue, 1, min, max)); true
+                    }
+
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        cyclePreset(); true
+                    }
+
+                    else -> false
+                }
+            }
+            .clickable { cyclePreset() }
+            .padding(horizontal = 16.dp, vertical = 14.dp)
     ) {
         Row(
             modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Text(
                 text = label,
                 color = NetflixWhite,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Bold
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "◀",
+                color = if (focused) NetflixWhite else NetflixLightGray,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(end = 12.dp)
             )
             Text(
                 text = "$currentValue%",
                 color = NetflixRed,
-                fontSize = 18.sp,
+                fontSize = 20.sp,
                 fontWeight = FontWeight.Black
+            )
+            Text(
+                text = "▶",
+                color = if (focused) NetflixWhite else NetflixLightGray,
+                fontSize = 16.sp,
+                modifier = Modifier.padding(start = 12.dp)
             )
         }
 
         Spacer(modifier = Modifier.height(10.dp))
 
-        // Discrete choices instead of a Slider. A Slider cannot be driven by a
-        // TV remote: D-pad focus could land on the track but left/right never
-        // resolved to a value, so these thresholds could not be changed at all.
-        // Presets plus ±1/±10 buttons keep 1% precision reachable (97% used to
-        // require impossible 5% arithmetic) without a long row of chips.
-        val presets = listOf(70, 85, 90, 95, 97).filter { it in min..max }
-            .ifEmpty { listOf(min, max) }
-
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+        // Value track. Purely decorative: focus stays on the row, so there is
+        // never a second D-pad stop for the same setting.
+        Box(
+            modifier = Modifier
+                .fillMaxWidth()
+                .height(4.dp)
+                .clip(RoundedCornerShape(2.dp))
+                .background(NetflixLightGray.copy(alpha = 0.25f))
         ) {
-            presets.forEach { preset ->
-                ThresholdChip(
-                    text = "$preset%",
-                    selected = currentValue == preset,
-                    enabled = true,
-                    onClick = { onValueChange(preset) }
-                )
-            }
+            Box(
+                modifier = Modifier
+                    .fillMaxWidth(fraction)
+                    .fillMaxHeight()
+                    .background(NetflixRed, RoundedCornerShape(2.dp))
+            )
         }
 
         Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "◀ ▶ adjust • OK cycles 75/80/85/90/95",
+            color = NetflixLightGray,
+            fontSize = 11.sp
+        )
+    }
+}
 
-        Row(
-            modifier = Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalAlignment = Alignment.CenterVertically
+/**
+ * Inline cyclic selector: LEFT/RIGHT step through options, OK opens a TV modal
+ * list. Replaces the mouse-oriented DropdownMenu, which a remote could open but
+ * not navigate comfortably.
+ */
+@Composable
+fun TvCyclicSelector(
+    label: String,
+    options: List<Pair<String, String>>,
+    selectedCode: String,
+    onSelect: (String) -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var focused by remember { mutableStateOf(false) }
+    var showList by remember { mutableStateOf(false) }
+    val index = options.indexOfFirst { it.first == selectedCode }.coerceAtLeast(0)
+    val current = options.getOrNull(index)?.second ?: "—"
+    val shape = RoundedCornerShape(NetflixDimens.CardRadius)
+
+    fun move(direction: Int) {
+        if (options.isEmpty()) return
+        val next = (index + direction + options.size) % options.size
+        onSelect(options[next].first)
+    }
+
+    Row(
+        modifier = modifier
+            .fillMaxWidth()
+            .height(52.dp)
+            .clip(shape)
+            .background(if (focused) NetflixCardSurface else NetflixDarkSurface)
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) NetflixWhite else NetflixLightGray.copy(alpha = 0.3f),
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .onKeyEvent { event ->
+                if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
+                when (event.key) {
+                    Key.DirectionLeft -> {
+                        move(-1); true
+                    }
+
+                    Key.DirectionRight -> {
+                        move(1); true
+                    }
+
+                    Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        showList = true; true
+                    }
+
+                    else -> false
+                }
+            }
+            .clickable { showList = true }
+            .padding(horizontal = 14.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = NetflixLightGray,
+            fontSize = 14.sp,
+            modifier = Modifier.weight(1f),
+            maxLines = 1
+        )
+        Text(
+            text = "◀",
+            color = if (focused) NetflixWhite else NetflixLightGray,
+            fontSize = 15.sp
+        )
+        Text(
+            text = current,
+            color = NetflixWhite,
+            fontSize = 15.sp,
+            fontWeight = FontWeight.Bold,
+            modifier = Modifier.padding(horizontal = 12.dp),
+            maxLines = 1
+        )
+        Text(
+            text = "▶",
+            color = if (focused) NetflixWhite else NetflixLightGray,
+            fontSize = 15.sp
+        )
+    }
+
+    if (showList) {
+        TvSelectionDialog(
+            title = label,
+            options = options,
+            selectedCode = selectedCode,
+            onSelect = {
+                onSelect(it)
+                showList = false
+            },
+            onDismiss = { showList = false }
+        )
+    }
+}
+
+@Composable
+private fun TvSelectionDialog(
+    title: String,
+    options: List<Pair<String, String>>,
+    selectedCode: String,
+    onSelect: (String) -> Unit,
+    onDismiss: () -> Unit
+) {
+    val shapes = RoundedCornerShape(10.dp)
+    Dialog(
+        onDismissRequest = onDismiss,
+        properties = DialogProperties(usePlatformDefaultWidth = false)
+    ) {
+        Column(
+            modifier = Modifier
+                .width(560.dp)
+                .heightIn(max = 560.dp)
+                .clip(shapes)
+                .background(NetflixDarkSurface)
+                .border(2.dp, NetflixWhite.copy(alpha = 0.85f), shapes)
+                .padding(20.dp)
         ) {
-            ThresholdChip(
-                text = "\u221210",
-                selected = false,
-                enabled = currentValue > min,
-                onClick = { onValueChange((currentValue - 10).coerceAtLeast(min)) }
+            Text(
+                text = title,
+                color = NetflixWhite,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.padding(bottom = 12.dp)
             )
-            ThresholdChip(
-                text = "\u22121",
-                selected = false,
-                enabled = currentValue > min,
-                onClick = { onValueChange((currentValue - 1).coerceAtLeast(min)) }
-            )
-            ThresholdChip(
-                text = "+1",
-                selected = false,
-                enabled = currentValue < max,
-                onClick = { onValueChange((currentValue + 1).coerceAtMost(max)) }
-            )
-            ThresholdChip(
-                text = "+10",
-                selected = false,
-                enabled = currentValue < max,
-                onClick = { onValueChange((currentValue + 10).coerceAtMost(max)) }
-            )
+            LazyColumn(verticalArrangement = Arrangement.spacedBy(6.dp)) {
+                items(options, key = { it.first }) { option ->
+                    DialogOptionRow(
+                        label = option.second,
+                        selected = option.first == selectedCode,
+                        requestFocusOnStart = option.first == selectedCode,
+                        onClick = { onSelect(option.first) }
+                    )
+                }
+            }
         }
     }
 }
 
 @Composable
-private fun ThresholdChip(
-    text: String,
+private fun DialogOptionRow(
+    label: String,
     selected: Boolean,
-    enabled: Boolean,
+    requestFocusOnStart: Boolean,
     onClick: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    Box(
+    val shape = RoundedCornerShape(6.dp)
+    val requester = remember { FocusRequester() }
+
+    if (requestFocusOnStart) {
+        LaunchedEffect(Unit) {
+            withFrameNanos { }
+            runCatching { requester.requestFocus() }
+        }
+    }
+
+    Row(
         modifier = Modifier
-            .clip(RoundedCornerShape(4.dp))
+            .fillMaxWidth()
+            .height(46.dp)
+            .clip(shape)
+            .background(
+                when {
+                    focused -> NetflixWhite.copy(alpha = 0.16f)
+                    selected -> NetflixWhite.copy(alpha = 0.08f)
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) NetflixWhite else Color.Transparent,
+                shape = shape
+            )
+            .focusRequester(requester)
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = if (selected) "✓" else " ",
+            color = NetflixRed,
+            fontSize = 16.sp,
+            fontWeight = FontWeight.Black,
+            modifier = Modifier.width(24.dp)
+        )
+        Text(
+            text = label,
+            color = if (selected || focused) NetflixWhite else NetflixLightGray,
+            fontSize = 15.sp,
+            fontWeight = if (selected) FontWeight.Bold else FontWeight.Normal,
+            maxLines = 1
+        )
+    }
+}
+
+/** Focusable checkbox replacement with a trailing check badge. */
+@Composable
+fun TvToggleRow(
+    label: String,
+    checked: Boolean,
+    onToggle: () -> Unit
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "toggleScale")
+    val shape = RoundedCornerShape(6.dp)
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .scale(scale)
+            .clip(shape)
+            .background(
+                when {
+                    focused -> NetflixWhite.copy(alpha = 0.15f)
+                    checked -> NetflixDarkSurface
+                    else -> Color.Transparent
+                }
+            )
+            .border(
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) NetflixWhite else NetflixBorderHighlight,
+                shape = shape
+            )
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onToggle() }
+            .padding(horizontal = 14.dp, vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        Text(
+            text = label,
+            color = NetflixWhite,
+            fontSize = 15.sp,
+            modifier = Modifier.weight(1f)
+        )
+        Text(
+            text = if (checked) "✓ Included" else "— Hidden",
+            color = if (checked) NetflixRed else NetflixLightGray,
+            fontSize = 13.sp,
+            fontWeight = if (checked) FontWeight.Bold else FontWeight.Normal
+        )
+    }
+}
+
+/** TV action/choice button: focused scale + 2dp white border, no glow. */
+@Composable
+fun TvChoiceButton(
+    text: String,
+    selected: Boolean,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "choiceScale")
+    val shape = RoundedCornerShape(6.dp)
+
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .clip(shape)
             .background(
                 when {
                     selected -> NetflixRed
@@ -608,155 +894,56 @@ private fun ThresholdChip(
                 }
             )
             .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) NetflixWhite else Color.Transparent,
-                shape = RoundedCornerShape(4.dp)
+                width = if (focused) 2.dp else 1.dp,
+                color = if (focused) NetflixWhite else NetflixBorderHighlight,
+                shape = shape
             )
-            .onFocusChanged { focused = it.isFocused || it.hasFocus }
-            .clickable(enabled = enabled) { onClick() }
-            .padding(horizontal = 14.dp, vertical = 10.dp),
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 20.dp, vertical = 14.dp),
         contentAlignment = Alignment.Center
     ) {
         Text(
             text = text,
-            color = if (enabled) NetflixWhite else NetflixLightGray.copy(alpha = 0.5f),
-            fontSize = 13.sp,
+            color = NetflixWhite,
+            fontSize = 14.sp,
             fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium
         )
     }
 }
 
+/** Red filled action button (connect/disconnect) with a TV focus ring. */
 @Composable
-fun LanguageDropdownMenu(
-    selectedCode: String,
-    onSelectLanguage: (String) -> Unit,
+fun TvActionButton(
+    text: String,
+    onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var expanded by remember { mutableStateOf(false) }
-    var isFocused by remember { mutableStateOf(false) }
-    val currentOption = SUPPORTED_LANGUAGES.find { it.code == selectedCode } ?: SUPPORTED_LANGUAGES[0]
+    var focused by remember { mutableStateOf(false) }
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "actionScale")
+    val shape = RoundedCornerShape(4.dp)
 
-    Box(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .background(
-                    if (isFocused) NetflixCardSurface else NetflixDarkSurface,
-                    RoundedCornerShape(NetflixDimens.CardRadius)
-                )
-                .border(
-                    width = if (isFocused) 2.dp else 1.dp,
-                    color = if (isFocused) NetflixRed else NetflixLightGray.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(NetflixDimens.CardRadius)
-                )
-                .onFocusChanged { isFocused = it.isFocused || it.hasFocus }
-                .clickable { expanded = true }
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.settings_language_value_format, currentOption.name),
-                color = NetflixWhite,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
+    Box(
+        modifier = modifier
+            .scale(scale)
+            .clip(shape)
+            .background(NetflixRed)
+            .border(
+                width = if (focused) 2.dp else 0.dp,
+                color = if (focused) NetflixWhite else Color.Transparent,
+                shape = shape
             )
-            Icon(
-                imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = "Dropdown",
-                tint = NetflixWhite
-            )
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(NetflixDarkSurface)
-        ) {
-            SUPPORTED_LANGUAGES.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = option.name,
-                            color = if (option.code == selectedCode) NetflixRed else NetflixWhite,
-                            fontWeight = if (option.code == selectedCode) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    onClick = {
-                        onSelectLanguage(option.code)
-                        expanded = false
-                    }
-                )
-            }
-        }
-    }
-}
-
-@Composable
-fun CountryDropdownMenu(
-    selectedCode: String,
-    onSelectCountry: (String) -> Unit,
-    modifier: Modifier = Modifier
-) {
-    var expanded by remember { mutableStateOf(false) }
-    var isFocused by remember { mutableStateOf(false) }
-    val currentOption = SUPPORTED_COUNTRIES.find { it.code == selectedCode } ?: SUPPORTED_COUNTRIES[0]
-
-    Box(modifier = modifier) {
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(48.dp)
-                .background(
-                    if (isFocused) NetflixCardSurface else NetflixDarkSurface,
-                    RoundedCornerShape(NetflixDimens.CardRadius)
-                )
-                .border(
-                    width = if (isFocused) 2.dp else 1.dp,
-                    color = if (isFocused) NetflixRed else NetflixLightGray.copy(alpha = 0.3f),
-                    shape = RoundedCornerShape(NetflixDimens.CardRadius)
-                )
-                .onFocusChanged { isFocused = it.isFocused || it.hasFocus }
-                .clickable { expanded = true }
-                .padding(horizontal = 14.dp),
-            verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.SpaceBetween
-        ) {
-            Text(
-                text = stringResource(R.string.settings_country_value_format, currentOption.name),
-                color = NetflixWhite,
-                fontSize = 14.sp,
-                fontWeight = FontWeight.Medium
-            )
-            Icon(
-                imageVector = Icons.Default.ArrowDropDown,
-                contentDescription = "Dropdown",
-                tint = NetflixWhite
-            )
-        }
-
-        DropdownMenu(
-            expanded = expanded,
-            onDismissRequest = { expanded = false },
-            modifier = Modifier.background(NetflixDarkSurface)
-        ) {
-            SUPPORTED_COUNTRIES.forEach { option ->
-                DropdownMenuItem(
-                    text = {
-                        Text(
-                            text = option.name,
-                            color = if (option.code == selectedCode) NetflixRed else NetflixWhite,
-                            fontWeight = if (option.code == selectedCode) FontWeight.Bold else FontWeight.Normal
-                        )
-                    },
-                    onClick = {
-                        onSelectCountry(option.code)
-                        expanded = false
-                    }
-                )
-            }
-        }
+            .onFocusChanged { focused = it.isFocused }
+            .clickable { onClick() }
+            .padding(horizontal = 22.dp, vertical = 12.dp),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = text,
+            color = NetflixWhite,
+            fontSize = 14.sp,
+            fontWeight = FontWeight.Bold
+        )
     }
 }
 
@@ -866,50 +1053,6 @@ fun AutoSaveInputField(
 }
 
 @Composable
-fun StremioStrategyButtons(
-    stremioIdStrategy: String,
-    onSelectStremioStrategy: (String) -> Unit
-) {
-    var imdbBtnFocused by remember { mutableStateOf(false) }
-    Button(
-        onClick = { onSelectStremioStrategy("IMDB") },
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (stremioIdStrategy == "IMDB") NetflixRed else NetflixDarkSurface,
-            contentColor = NetflixWhite
-        ),
-        shape = RoundedCornerShape(4.dp),
-        modifier = Modifier
-            .border(
-                width = if (imdbBtnFocused) 2.dp else 0.dp,
-                color = if (imdbBtnFocused) NetflixWhite else Color.Transparent,
-                shape = RoundedCornerShape(4.dp)
-            )
-            .onFocusChanged { imdbBtnFocused = it.isFocused || it.hasFocus }
-    ) {
-        Text(text = "IMDb IDs (tt1234567)")
-    }
-
-    var tmdbBtnFocused by remember { mutableStateOf(false) }
-    Button(
-        onClick = { onSelectStremioStrategy("TMDB") },
-        colors = ButtonDefaults.buttonColors(
-            containerColor = if (stremioIdStrategy == "TMDB") NetflixRed else NetflixDarkSurface,
-            contentColor = NetflixWhite
-        ),
-        shape = RoundedCornerShape(4.dp),
-        modifier = Modifier
-            .border(
-                width = if (tmdbBtnFocused) 2.dp else 0.dp,
-                color = if (tmdbBtnFocused) NetflixWhite else Color.Transparent,
-                shape = RoundedCornerShape(4.dp)
-            )
-            .onFocusChanged { tmdbBtnFocused = it.isFocused || it.hasFocus }
-    ) {
-        Text(text = "TMDB IDs (tmdb:123)")
-    }
-}
-
-@Composable
 fun SettingsSectionHeader(title: String) {
     Text(
         text = title,
@@ -917,5 +1060,15 @@ fun SettingsSectionHeader(title: String) {
         fontSize = 18.sp,
         fontWeight = FontWeight.Bold,
         modifier = Modifier.padding(bottom = 6.dp)
+    )
+}
+
+@Composable
+private fun SettingHint(text: String) {
+    Text(
+        text = text,
+        color = NetflixLightGray,
+        fontSize = 13.sp,
+        modifier = Modifier.padding(bottom = 8.dp)
     )
 }

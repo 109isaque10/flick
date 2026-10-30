@@ -1,3 +1,8 @@
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class
+)
+
 package com.stremflix.ui.home
 
 import androidx.compose.animation.core.animateFloatAsState
@@ -30,12 +35,15 @@ import androidx.compose.material.icons.filled.Key
 import androidx.compose.material.icons.filled.Person
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import androidx.compose.foundation.BorderStroke
+import androidx.tv.material3.Border
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.OutlinedButton
+import androidx.tv.material3.OutlinedButtonDefaults
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
@@ -78,6 +86,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
@@ -106,7 +115,8 @@ fun HomeScreen(
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
-            .background(NetflixBlack),
+            .background(NetflixBlack)
+            .focusRestorer(),
         contentPadding = PaddingValues(bottom = 32.dp)
     ) {
         // Netflix 2020 phone chrome: the wordmark plus search/profile on every
@@ -177,11 +187,11 @@ fun HomeScreen(
                         Spacer(modifier = Modifier.height(20.dp))
                         Button(
                             onClick = onNavigateToSettings,
-                            colors = ButtonDefaults.buttonColors(
+                            colors = ButtonDefaults.colors(
                                 containerColor = NetflixRed,
                                 contentColor = NetflixWhite
                             ),
-                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                            shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius))
                         ) {
                             Text(
                                 text = stringResource(R.string.btn_go_to_settings),
@@ -202,7 +212,7 @@ fun HomeScreen(
                 }
             }
 
-            items(contentRows, key = { it.id }) { row ->
+            items(contentRows, key = { it.id }, contentType = { "row" }) { row ->
                 ContentRowSection(
                     title = row.title,
                     titleRes = row.titleRes,
@@ -512,17 +522,16 @@ fun HeroSection(
             Spacer(modifier = Modifier.height(14.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
-                var playFocused by remember { mutableStateOf(false) }
                 Button(
                     onClick = onPlayClicked,
-                    colors = ButtonDefaults.buttonColors(
-                        containerColor = if (playFocused) NetflixRed else NetflixWhite,
-                        contentColor = if (playFocused) NetflixWhite else NetflixBlack
+                    colors = ButtonDefaults.colors(
+                        containerColor = NetflixWhite,
+                        contentColor = NetflixBlack,
+                        focusedContainerColor = NetflixRed,
+                        focusedContentColor = NetflixWhite
                     ),
-                    shape = RoundedCornerShape(NetflixDimens.CardRadius),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp),
-                    modifier = Modifier
-                        .onFocusChanged { playFocused = it.isFocused }
+                    shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
+                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.PlayArrow,
@@ -539,29 +548,26 @@ fun HeroSection(
 
                 Spacer(modifier = Modifier.width(12.dp))
 
-                var infoFocused by remember { mutableStateOf(false) }
                 OutlinedButton(
                     onClick = onInfoClicked,
-                    shape = RoundedCornerShape(NetflixDimens.CardRadius),
-                    border = ButtonDefaults.outlinedButtonBorder.copy(
-                        brush = Brush.horizontalGradient(
-                            listOf(
-                                if (infoFocused) NetflixWhite else NetflixMutedGray,
-                                if (infoFocused) NetflixWhite else NetflixMutedGray
-                            )
+                    shape = OutlinedButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
+                    border = OutlinedButtonDefaults.border(
+                        border = Border(
+                            BorderStroke(1.dp, NetflixMutedGray),
+                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                        ),
+                        focusedBorder = Border(
+                            BorderStroke(1.5.dp, NetflixWhite),
+                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
                         )
                     ),
-                    colors = ButtonDefaults.outlinedButtonColors(
-                        containerColor = if (infoFocused) {
-                            NetflixWhite.copy(alpha = 0.2f)
-                        } else {
-                            NetflixDarkSurface.copy(alpha = 0.8f)
-                        },
-                        contentColor = NetflixWhite
+                    colors = OutlinedButtonDefaults.colors(
+                        containerColor = NetflixDarkSurface.copy(alpha = 0.8f),
+                        contentColor = NetflixWhite,
+                        focusedContainerColor = NetflixWhite.copy(alpha = 0.2f),
+                        focusedContentColor = NetflixWhite
                     ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp),
-                    modifier = Modifier
-                        .onFocusChanged { infoFocused = it.isFocused }
+                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
                 ) {
                     Icon(
                         imageVector = Icons.Default.Info,
@@ -643,12 +649,14 @@ fun ContentRowSection(
 
         val distinctItems = remember(items) { items.distinctBy { "${it.mediaType}_${it.id}" } }
         LazyRow(
+            modifier = Modifier.focusRestorer(),
             contentPadding = PaddingValues(horizontal = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(NetflixDimens.RowItemSpacing)
         ) {
             itemsIndexed(
                 distinctItems,
-                key = { _, item -> "${item.mediaType}_${item.id}" }
+                key = { _, item -> "${item.mediaType}_${item.id}" },
+                contentType = { _, _ -> "card" }
             ) { index, item ->
                 MediaCard(
                     item = item,

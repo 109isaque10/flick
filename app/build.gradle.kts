@@ -116,5 +116,8 @@ dependencies {
   implementation(libs.kotlinx.coroutines.core)
   implementation(libs.androidx.datastore.preferences)
 
+  // Constrained background job for Trakt / continue-watching reconciliation
+  implementation(libs.androidx.work.runtime.ktx)
+
   debugImplementation(libs.androidx.compose.ui.tooling)
 }

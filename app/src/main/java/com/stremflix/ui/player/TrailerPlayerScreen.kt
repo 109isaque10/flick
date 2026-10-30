@@ -21,10 +21,11 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -51,6 +52,9 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
+import androidx.lifecycle.Lifecycle
+import androidx.lifecycle.LifecycleEventObserver
+import androidx.lifecycle.compose.LocalLifecycleOwner
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.datasource.DefaultHttpDataSource
@@ -59,6 +63,7 @@ import androidx.media3.exoplayer.source.DefaultMediaSourceFactory
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.stremflix.R
+import com.stremflix.ui.components.TvSpinner
 import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixLightGray
 import com.stremflix.ui.theme.NetflixRed
@@ -70,7 +75,7 @@ import kotlinx.coroutines.delay
  * single play/pause control. No audio/subtitle switching, no seeking, no next
  * episode — a trailer is a short clip, not a viewing session.
  */
-@OptIn(androidx.media3.common.util.UnstableApi::class)
+@OptIn(androidx.media3.common.util.UnstableApi::class, ExperimentalTvMaterial3Api::class)
 @Composable
 fun TrailerPlayerScreen(
     streamUrl: String,
@@ -110,6 +115,7 @@ fun TrailerPlayerScreen(
             .setMediaSourceFactory(
                 DefaultMediaSourceFactory(context).setDataSourceFactory(httpDataSourceFactory)
             )
+            .setLoadControl(buildPlayerLoadControl(context))
             .build()
             .apply {
                 setMediaItem(
@@ -141,6 +147,29 @@ fun TrailerPlayerScreen(
 
     DisposableEffect(exoPlayer) {
         onDispose { exoPlayer.release() }
+    }
+
+    // A trailer must not keep the decoder alive while the app is in the
+    // background; remember whether it was playing so a manual pause survives.
+    val lifecycleOwner = LocalLifecycleOwner.current
+    DisposableEffect(lifecycleOwner, exoPlayer) {
+        var wasPlaying = exoPlayer.isPlaying
+        val observer = LifecycleEventObserver { _, event ->
+            when (event) {
+                Lifecycle.Event.ON_STOP -> {
+                    wasPlaying = exoPlayer.isPlaying
+                    exoPlayer.pause()
+                }
+
+                Lifecycle.Event.ON_START -> if (wasPlaying) {
+                    exoPlayer.playWhenReady = true
+                }
+
+                else -> {}
+            }
+        }
+        lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     LaunchedEffect(exoPlayer) {
@@ -256,10 +285,10 @@ fun TrailerPlayerScreen(
                             .focusRequester(playPauseRequester)
                     ) {
                         when {
-                            isBuffering -> CircularProgressIndicator(
+                            isBuffering -> TvSpinner(
                                 color = NetflixWhite,
-                                strokeWidth = 2.dp,
-                                modifier = Modifier.size(22.dp)
+                                size = 22.dp,
+                                strokeWidth = 2.dp
                             )
 
                             else -> Icon(

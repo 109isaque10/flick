@@ -141,11 +141,9 @@ fun MainAppContent(
     val coroutineScope = rememberCoroutineScope()
     val context = LocalContext.current
 
-    // Trakt Initial Sync on App Launch
-    LaunchedEffect(Unit) {
-        traktRepository.syncWatchlist()
-        traktRepository.syncPlayback()
-    }
+    // Trakt watchlist/playback reconciliation now runs as a constrained
+    // WorkManager job (StremFlixApp -> TraktSyncScheduler), so launch is no
+    // longer held up by network calls while the first frame composes.
 
     val selectedProviders by settingsDataStore.selectedRatingProviders.collectAsStateWithLifecycle(initialValue = emptySet())
 
@@ -724,8 +722,12 @@ fun MainAppContent(
                     }
 
                     NavDestination.MOVIES -> {
-                        val movieRows =
+                        // Derived once per `contentRows` change. Building the list
+                        // inline made a new List instance on every recomposition, so
+                        // HomeScreen could never skip and fully re-laid every row.
+                        val movieRows = remember(contentRows) {
                             contentRows.filter { it.id == "popular_movies" || it.id == "action_adventure" }
+                        }
                         HomeScreen(
                             contentRows = if (movieRows.isNotEmpty()) movieRows else contentRows,
                             heroItem = contentRows.firstOrNull { it.id == "popular_movies" }?.items?.firstOrNull()
@@ -742,7 +744,9 @@ fun MainAppContent(
                     }
 
                     NavDestination.TV_SHOWS -> {
-                        val tvRows = contentRows.filter { it.id == "bingeworthy_tv" }
+                        val tvRows = remember(contentRows) {
+                            contentRows.filter { it.id == "bingeworthy_tv" }
+                        }
                         HomeScreen(
                             contentRows = if (tvRows.isNotEmpty()) tvRows else contentRows,
                             heroItem = contentRows.firstOrNull { it.id == "bingeworthy_tv" }?.items?.firstOrNull()
@@ -759,14 +763,16 @@ fun MainAppContent(
                     }
 
                     NavDestination.MY_LIST -> {
-                        val myListRows = listOf(
-                            ContentRow(
-                                id = "my_watchlist",
-                                title = "",
-                                titleRes = R.string.row_my_list,
-                                items = savedWatchlist
+                        val myListRows = remember(savedWatchlist) {
+                            listOf(
+                                ContentRow(
+                                    id = "my_watchlist",
+                                    title = "",
+                                    titleRes = R.string.row_my_list,
+                                    items = savedWatchlist
+                                )
                             )
-                        )
+                        }
                         HomeScreen(
                             contentRows = myListRows,
                             heroItem = savedWatchlist.firstOrNull(),

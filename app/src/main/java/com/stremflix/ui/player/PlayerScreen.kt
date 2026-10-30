@@ -1,3 +1,8 @@
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class
+)
+
 package com.stremflix.ui.player
 
 import android.app.Activity
@@ -52,17 +57,13 @@ import androidx.compose.material.icons.filled.Replay10
 import androidx.compose.material.icons.filled.SkipNext
 import androidx.compose.material.icons.filled.Speed
 import androidx.compose.material.icons.filled.VideoLibrary
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.DropdownMenu
-import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Slider
-import androidx.compose.material3.SliderDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.Surface
+import androidx.tv.material3.SurfaceDefaults
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -83,6 +84,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.key.KeyEventType
@@ -125,6 +127,9 @@ import com.stremflix.ui.theme.NetflixDarkSurface
 import com.stremflix.ui.theme.NetflixLightGray
 import com.stremflix.ui.theme.NetflixMutedGray
 import com.stremflix.ui.theme.NetflixRed
+import com.stremflix.ui.components.TvOptionMenuDialog
+import com.stremflix.ui.components.TvSeekBar
+import com.stremflix.ui.components.TvSpinner
 import com.stremflix.ui.theme.NetflixWhite
 import kotlinx.coroutines.delay
 import java.util.Locale
@@ -221,10 +226,6 @@ fun PlayerScreen(
     var reachedEnd by remember { mutableStateOf(false) }
     var autoAdvanceHandled by remember { mutableStateOf(false) }
 
-    // Scrubbing uses a local value so the 500 ms position updates do not fight the thumb.
-    var isSeeking by remember { mutableStateOf(false) }
-    var seekValue by remember { mutableFloatStateOf(0f) }
-
     var lastProgressSave by remember { mutableLongStateOf(0L) }
     var playerError by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
@@ -240,7 +241,6 @@ fun PlayerScreen(
         savedPlaybackPosition = 0L
         reachedEnd = false
         autoAdvanceHandled = false
-        isSeeking = false
         lastProgressSave = 0L
         playerError = null
     }
@@ -258,6 +258,7 @@ fun PlayerScreen(
 
         val player = ExoPlayer.Builder(context)
             .setMediaSourceFactory(mediaSourceFactory)
+            .setLoadControl(buildPlayerLoadControl(context))
             .build().apply {
                 setMediaItem(MediaItem.fromUri(Uri.parse(streamUrl)))
                 if (initialPositionMs > 0L) {
@@ -379,9 +380,25 @@ fun PlayerScreen(
                     }
                 }
 
+                // A TV app that is not an audio app must not keep media
+                // resources alive once it is no longer visible. Stopping the
+                // player drops its decoder buffers and queued media while
+                // keeping the instance, so returning is a re-prepare rather
+                // than a full re-create.
+                Lifecycle.Event.ON_STOP -> {
+                    exoPlayer?.let { player ->
+                        savedPlaybackPosition = player.currentPosition
+                        player.pause()
+                        player.stop()
+                    }
+                }
+
                 Lifecycle.Event.ON_RESUME -> {
                     exoPlayer?.let { player ->
                         if (player.playbackState == Player.STATE_IDLE) {
+                            if (savedPlaybackPosition > 0L) {
+                                player.seekTo(savedPlaybackPosition)
+                            }
                             player.prepare()
                         }
                         player.playWhenReady = true
@@ -658,8 +675,13 @@ fun PlayerScreen(
                                 playerError = null
                                 reloadKey++
                             },
-                            colors = ButtonDefaults.buttonColors(containerColor = NetflixWhite),
-                            shape = RoundedCornerShape(4.dp)
+                            colors = ButtonDefaults.colors(
+                                containerColor = NetflixWhite,
+                                contentColor = NetflixBlack,
+                                focusedContainerColor = NetflixWhite,
+                                focusedContentColor = NetflixBlack
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                         ) {
                             Text(
                                 text = stringResource(R.string.action_retry),
@@ -669,8 +691,13 @@ fun PlayerScreen(
                         }
                         Button(
                             onClick = onBack,
-                            colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF333333)),
-                            shape = RoundedCornerShape(4.dp)
+                            colors = ButtonDefaults.colors(
+                                containerColor = Color(0xFF333333),
+                                contentColor = NetflixWhite,
+                                focusedContainerColor = NetflixRed,
+                                focusedContentColor = NetflixWhite
+                            ),
+                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                         ) {
                             Text(
                                 text = stringResource(R.string.action_back),
@@ -702,11 +729,9 @@ fun PlayerScreen(
 
         // Loading Spinner (When controls are hidden)
         if (isBuffering && !isControlsVisible) {
-            CircularProgressIndicator(
+            TvSpinner(
                 color = NetflixRed,
-                modifier = Modifier
-                    .size(56.dp)
-                    .align(Alignment.Center)
+                modifier = Modifier.align(Alignment.Center)
             )
         }
 
@@ -862,9 +887,9 @@ fun PlayerScreen(
                             contentAlignment = Alignment.Center
                         ) {
                             if (isBuffering) {
-                                CircularProgressIndicator(
+                                TvSpinner(
                                     color = NetflixWhite,
-                                    modifier = Modifier.size(52.dp),
+                                    size = 52.dp,
                                     strokeWidth = 3.dp
                                 )
                             } else {
@@ -915,54 +940,20 @@ fun PlayerScreen(
                         .align(Alignment.BottomCenter)
                         .padding(horizontal = 24.dp, vertical = 16.dp)
                 ) {
-                    val progressRatio =
-                        if (isSeeking) seekValue else (currentPosition.toFloat() / duration.toFloat()).coerceIn(0f, 1f)
-
-                    // Time labels sit above the track so the scrub bar can span the
-                    // full width. Previously the timestamp sat beside the slider,
-                    // so the track ended short and never aligned with the top bar.
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Text(
-                            text = formatTime(if (isSeeking) (seekValue * duration).toLong() else currentPosition),
-                            color = NetflixLightGray,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-
-                        Spacer(modifier = Modifier.weight(1f))
-
-                        Text(
-                            text = formatTime(duration),
-                            color = NetflixLightGray,
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Medium
-                        )
-                    }
-
-                    Slider(
-                        value = progressRatio,
-                        onValueChange = { ratio ->
-                            isSeeking = true
-                            seekValue = ratio
+                    // D-pad seek bar: LEFT/RIGHT scrub 10s, OK toggles playback.
+                    TvSeekBar(
+                        positionMs = currentPosition,
+                        durationMs = duration,
+                        modifier = Modifier.fillMaxWidth(),
+                        onSeekTo = { target ->
+                            exoPlayer?.seekTo(target)
                             lastInteractionTime = System.currentTimeMillis()
                         },
-                        onValueChangeFinished = {
-                            // Seek once on release instead of on every pixel,
-                            // which previously fought the thumb.
-                            exoPlayer?.seekTo((seekValue * duration).toLong())
-                            isSeeking = false
+                        onTogglePlayPause = {
+                            exoPlayer?.let { if (it.isPlaying) it.pause() else it.play() }
+                            lastInteractionTime = System.currentTimeMillis()
                         },
-                        colors = SliderDefaults.colors(
-                            thumbColor = NetflixRed,
-                            activeTrackColor = NetflixRed,
-                            inactiveTrackColor = NetflixLightGray.copy(alpha = 0.3f)
-                        ),
-                        modifier = Modifier.fillMaxWidth()
+                        formatTime = ::formatTime
                     )
 
                     Spacer(modifier = Modifier.height(4.dp))
@@ -984,37 +975,27 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         val speedLabel = if (currentSpeed == 1f) "1x" else "${currentSpeed}x"
-                        Box {
-                            PlayerAction(
-                                icon = Icons.Default.Speed,
-                                label = stringResource(R.string.action_speed, speedLabel),
-                                onClick = { showSpeedMenu = true },
-                                onInteracted = { lastInteractionTime = System.currentTimeMillis() }
-                            )
+                        PlayerAction(
+                            icon = Icons.Default.Speed,
+                            label = stringResource(R.string.action_speed, speedLabel),
+                            onClick = { showSpeedMenu = true },
+                            onInteracted = { lastInteractionTime = System.currentTimeMillis() }
+                        )
 
-                            DropdownMenu(
-                                expanded = showSpeedMenu,
-                                onDismissRequest = { showSpeedMenu = false },
-                                modifier = Modifier.background(NetflixDarkSurface)
-                            ) {
-                                listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f).forEach { speed ->
-                                    DropdownMenuItem(
-                                        text = {
-                                            Text(
-                                                text = "${speed}x",
-                                                color = if (currentSpeed == speed) NetflixRed else NetflixWhite,
-                                                fontWeight = if (currentSpeed == speed) FontWeight.Bold else FontWeight.Normal
-                                            )
-                                        },
-                                        onClick = {
-                                            currentSpeed = speed
-                                            exoPlayer?.setPlaybackSpeed(speed)
-                                            showSpeedMenu = false
-                                            lastInteractionTime = System.currentTimeMillis()
-                                        }
-                                    )
-                                }
-                            }
+                        if (showSpeedMenu) {
+                            TvOptionMenuDialog(
+                                title = stringResource(R.string.action_speed, speedLabel),
+                                options = listOf(0.5f, 0.75f, 1.0f, 1.25f, 1.5f, 2.0f),
+                                selected = currentSpeed,
+                                optionLabel = { speed -> "${speed}x" },
+                                onSelect = { speed ->
+                                    currentSpeed = speed
+                                    exoPlayer?.setPlaybackSpeed(speed)
+                                    showSpeedMenu = false
+                                    lastInteractionTime = System.currentTimeMillis()
+                                },
+                                onDismiss = { showSpeedMenu = false }
+                            )
                         }
 
                         if (episodes.isNotEmpty() || currentEpisodeNumber != null || nextEpisode != null) {
@@ -1228,7 +1209,7 @@ fun PlayerScreen(
 
                         if (drawerSeasons.isNotEmpty()) {
                             LazyRow(
-                                modifier = Modifier.fillMaxWidth(),
+                                modifier = Modifier.fillMaxWidth().focusRestorer(),
                                 horizontalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 items(drawerSeasons) { seasonNumber ->
@@ -1284,7 +1265,7 @@ fun PlayerScreen(
                             }
                         } else {
                             LazyColumn(
-                                modifier = Modifier.fillMaxSize(),
+                                modifier = Modifier.fillMaxSize().focusRestorer(),
                                 verticalArrangement = Arrangement.spacedBy(8.dp)
                             ) {
                                 itemsIndexed(
@@ -1797,7 +1778,7 @@ fun AudioSubtitlesSelectionDialog(
             modifier = Modifier
                 .fillMaxWidth(0.85f)
                 .fillMaxHeight(0.88f),
-            color = NetflixBlack,
+            colors = SurfaceDefaults.colors(containerColor = NetflixBlack),
             shape = RoundedCornerShape(8.dp)
         ) {
             Box(
@@ -1824,7 +1805,10 @@ fun AudioSubtitlesSelectionDialog(
                             modifier = Modifier.padding(bottom = 16.dp)
                         )
 
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LazyColumn(
+                            modifier = Modifier.focusRestorer(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             items(audioList) { audio ->
                                 val isSelected = audio == tempAudio
                                 var rowFocused by remember { mutableStateOf(false) }
@@ -1882,7 +1866,10 @@ fun AudioSubtitlesSelectionDialog(
                             modifier = Modifier.padding(bottom = 16.dp)
                         )
 
-                        LazyColumn(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                        LazyColumn(
+                            modifier = Modifier.focusRestorer(),
+                            verticalArrangement = Arrangement.spacedBy(8.dp)
+                        ) {
                             items(subtitleList) { sub ->
                                 val isSelected = sub == tempSubtitle
                                 var subRowFocused by remember { mutableStateOf(false) }
@@ -1932,17 +1919,15 @@ fun AudioSubtitlesSelectionDialog(
                     modifier = Modifier.align(Alignment.BottomEnd),
                     horizontalArrangement = Arrangement.spacedBy(12.dp)
                 ) {
-                    var cancelFocused by remember { mutableStateOf(false) }
                     Button(
                         onClick = onDismiss,
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (cancelFocused) NetflixRed else Color(
-                                0xFF333333
-                            )
+                        colors = ButtonDefaults.colors(
+                            containerColor = Color(0xFF333333),
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixRed,
+                            focusedContentColor = NetflixWhite
                         ),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier
-                            .onFocusChanged { cancelFocused = it.isFocused }
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                     ) {
                         Text(
                             text = stringResource(R.string.action_cancel),
@@ -1952,17 +1937,18 @@ fun AudioSubtitlesSelectionDialog(
                         )
                     }
 
-                    var applyFocused by remember { mutableStateOf(false) }
                     Button(
                         onClick = { onApply(tempAudio, tempSubtitle) },
-                        colors = ButtonDefaults.buttonColors(containerColor = if (applyFocused) NetflixRed else NetflixWhite),
-                        shape = RoundedCornerShape(4.dp),
-                        modifier = Modifier
-                            .onFocusChanged { applyFocused = it.isFocused }
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixWhite,
+                            contentColor = NetflixBlack,
+                            focusedContainerColor = NetflixRed,
+                            focusedContentColor = NetflixWhite
+                        ),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                     ) {
                         Text(
                             text = stringResource(R.string.action_apply),
-                            color = if (applyFocused) NetflixWhite else NetflixBlack,
                             fontSize = 13.sp,
                             fontWeight = FontWeight.Bold
                         )

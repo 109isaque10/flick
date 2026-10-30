@@ -1,3 +1,8 @@
+@file:OptIn(
+    androidx.compose.ui.ExperimentalComposeUiApi::class,
+    androidx.tv.material3.ExperimentalTvMaterial3Api::class
+)
+
 package com.stremflix.ui.detail
 
 import androidx.activity.compose.BackHandler
@@ -38,15 +43,16 @@ import androidx.compose.material.icons.filled.PlaylistPlay
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Replay
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
+
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedButton
-import androidx.compose.material3.Text
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.OutlinedButton
+import androidx.tv.material3.OutlinedButtonDefaults
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -59,6 +65,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
@@ -77,6 +84,7 @@ import com.stremflix.R
 import com.stremflix.data.model.EpisodeModel
 import com.stremflix.data.model.MediaItem
 import com.stremflix.data.model.SeasonModel
+import com.stremflix.ui.components.TvSpinner
 import com.stremflix.ui.home.BadgeTag
 import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixBorderHighlight
@@ -217,6 +225,7 @@ private fun MobileDetailContent(
         modifier = modifier
             .fillMaxSize()
             .background(NetflixBlack)
+            .focusRestorer()
     ) {
         // Banner Header
         item {
@@ -327,11 +336,11 @@ private fun MobileDetailContent(
                                 onPlayClick(null, null)
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(
+                        colors = ButtonDefaults.colors(
                             containerColor = NetflixWhite,
                             contentColor = NetflixBlack
                         ),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
                         contentPadding = PaddingValues(0.dp),
                         modifier = Modifier
                             .weight(1.6f)
@@ -383,11 +392,11 @@ private fun MobileDetailContent(
 
                     OutlinedButton(
                         onClick = onToggleWatchlist,
-                        colors = ButtonDefaults.outlinedButtonColors(
+                        colors = OutlinedButtonDefaults.colors(
                             containerColor = NetflixDarkSurface.copy(alpha = 0.7f),
                             contentColor = NetflixWhite
                         ),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = OutlinedButtonDefaults.shape(RoundedCornerShape(4.dp)),
                         contentPadding = PaddingValues(horizontal = 10.dp),
                         modifier = Modifier
                             .weight(1f)
@@ -411,11 +420,11 @@ private fun MobileDetailContent(
                         Spacer(modifier = Modifier.width(8.dp))
                         OutlinedButton(
                             onClick = onPlayTrailer,
-                            colors = ButtonDefaults.outlinedButtonColors(
+                            colors = OutlinedButtonDefaults.colors(
                                 containerColor = NetflixDarkSurface.copy(alpha = 0.7f),
                                 contentColor = NetflixWhite
                             ),
-                            shape = RoundedCornerShape(4.dp),
+                            shape = OutlinedButtonDefaults.shape(RoundedCornerShape(4.dp)),
                             contentPadding = PaddingValues(horizontal = 8.dp),
                             modifier = Modifier.height(42.dp)
                         ) {
@@ -553,11 +562,7 @@ private fun MobileDetailContent(
                     if (seasons.isEmpty()) {
                         Spacer(modifier = Modifier.height(16.dp))
                         Row(verticalAlignment = Alignment.CenterVertically) {
-                            CircularProgressIndicator(
-                                color = NetflixRed,
-                                modifier = Modifier.size(20.dp),
-                                strokeWidth = 2.dp
-                            )
+                            TvSpinner(color = NetflixRed, size = 20.dp, strokeWidth = 2.dp)
                             Spacer(modifier = Modifier.width(10.dp))
                             Text(
                                 text = stringResource(R.string.loading_seasons),
@@ -592,11 +597,7 @@ private fun MobileDetailContent(
                         verticalAlignment = Alignment.CenterVertically,
                         modifier = Modifier.padding(horizontal = 16.dp, vertical = 12.dp)
                     ) {
-                        CircularProgressIndicator(
-                            color = NetflixRed,
-                            modifier = Modifier.size(20.dp),
-                            strokeWidth = 2.dp
-                        )
+                        TvSpinner(color = NetflixRed, size = 20.dp, strokeWidth = 2.dp)
                         Spacer(modifier = Modifier.width(10.dp))
                         Text(
                             text = stringResource(R.string.loading_episodes),
@@ -1236,7 +1237,7 @@ fun TvEpisodesView(
 
                 LazyColumn(
                     state = seasonListState,
-                    modifier = Modifier.weight(1f),
+                    modifier = Modifier.weight(1f).focusRestorer(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(seasons, key = { it.seasonNumber }) { season ->
@@ -1317,12 +1318,12 @@ fun TvEpisodesView(
 
                 if (episodes.isEmpty()) {
                     Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        CircularProgressIndicator(color = NetflixRed)
+                        TvSpinner(color = NetflixRed, size = 44.dp)
                     }
                 } else {
                     val distinctEpisodes = remember(episodes) { episodes.distinctBy { it.id } }
                     LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
+                        modifier = Modifier.fillMaxSize().focusRestorer(),
                         verticalArrangement = Arrangement.spacedBy(4.dp),
                         contentPadding = PaddingValues(bottom = 32.dp)
                     ) {

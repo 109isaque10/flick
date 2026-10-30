@@ -11,7 +11,8 @@ import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.material3.Text
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -28,6 +29,7 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import com.stremflix.ui.player.buildPlayerLoadControl
 import androidx.compose.ui.viewinterop.AndroidView
 import androidx.media3.common.MediaItem
 import androidx.media3.common.Player
@@ -38,6 +40,7 @@ import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixRed
 import kotlinx.coroutines.delay
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun StartupSplash(
     onSplashFinished: () -> Unit,
@@ -61,7 +64,9 @@ fun StartupSplash(
         var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
 
         DisposableEffect(rawResId) {
-            val player = ExoPlayer.Builder(context).build().apply {
+            val player = ExoPlayer.Builder(context)
+                .setLoadControl(buildPlayerLoadControl(context))
+                .build().apply {
                 val videoUri = Uri.parse("android.resource://${context.packageName}/$rawResId")
                 setMediaItem(MediaItem.fromUri(videoUri))
                 prepare()

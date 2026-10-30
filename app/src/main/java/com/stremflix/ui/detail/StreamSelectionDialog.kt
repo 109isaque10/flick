@@ -24,15 +24,15 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Close
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Warning
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.OutlinedTextField
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.Surface
-import androidx.compose.material3.Text
+
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.Surface
+import androidx.tv.material3.SurfaceDefaults
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -55,6 +55,8 @@ import androidx.compose.ui.window.Dialog
 import androidx.compose.ui.window.DialogProperties
 import com.stremflix.R
 import com.stremflix.data.model.StremioStream
+import com.stremflix.ui.components.TvInputCard
+import com.stremflix.ui.components.TvSpinner
 import com.stremflix.ui.theme.NetflixBlack
 import com.stremflix.ui.theme.NetflixBorderHighlight
 import com.stremflix.ui.theme.NetflixCardSurface
@@ -65,6 +67,7 @@ import com.stremflix.ui.theme.NetflixMutedGray
 import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun StreamSelectionDialog(
     mediaTitle: String,
@@ -95,7 +98,7 @@ fun StreamSelectionDialog(
                 .fillMaxWidth(0.92f)
                 .fillMaxHeight(0.85f),
             shape = RoundedCornerShape(NetflixDimens.BigCardRadius),
-            color = NetflixDarkSurface
+            colors = SurfaceDefaults.colors(containerColor = NetflixDarkSurface)
         ) {
             Column(
                 modifier = Modifier
@@ -159,10 +162,10 @@ fun StreamSelectionDialog(
                         contentAlignment = Alignment.Center
                     ) {
                         Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            CircularProgressIndicator(
+                            TvSpinner(
                                 color = NetflixRed,
-                                strokeWidth = 3.dp,
-                                modifier = Modifier.size(42.dp)
+                                size = 42.dp,
+                                strokeWidth = 3.dp
                             )
                             Spacer(modifier = Modifier.height(16.dp))
                             Text(
@@ -210,24 +213,12 @@ fun StreamSelectionDialog(
                             Spacer(modifier = Modifier.height(16.dp))
 
                             var customUrlInput by remember { mutableStateOf("") }
-                            OutlinedTextField(
+                            TvInputCard(
+                                label = "Custom stream",
                                 value = customUrlInput,
+                                placeholder = "https://... or magnet:",
                                 onValueChange = { customUrlInput = it },
-                                placeholder = {
-                                    Text(
-                                        "Direct stream URL (https://... or magnet:)",
-                                        fontSize = 12.sp,
-                                        color = NetflixMutedGray
-                                    )
-                                },
-                                modifier = Modifier.fillMaxWidth(),
-                                singleLine = true,
-                                colors = OutlinedTextFieldDefaults.colors(
-                                    focusedBorderColor = NetflixRed,
-                                    unfocusedBorderColor = NetflixMutedGray,
-                                    focusedTextColor = NetflixWhite,
-                                    unfocusedTextColor = NetflixWhite
-                                )
+                                modifier = Modifier.fillMaxWidth()
                             )
 
                             Spacer(modifier = Modifier.height(12.dp))
@@ -245,8 +236,8 @@ fun StreamSelectionDialog(
                                             )
                                         }
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = NetflixRed),
-                                    shape = RoundedCornerShape(4.dp)
+                                    colors = ButtonDefaults.colors(containerColor = NetflixRed),
+                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                                 ) {
                                     Text("Play Custom URL", fontSize = 13.sp)
                                 }
@@ -256,8 +247,8 @@ fun StreamSelectionDialog(
                                         onDismiss()
                                         onNavigateToSettings()
                                     },
-                                    colors = ButtonDefaults.buttonColors(containerColor = NetflixCardSurface),
-                                    shape = RoundedCornerShape(4.dp)
+                                    colors = ButtonDefaults.colors(containerColor = NetflixCardSurface),
+                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
                                 ) {
                                     Text("Open Settings", fontSize = 13.sp, color = NetflixWhite)
                                 }
@@ -297,6 +288,7 @@ fun StreamSelectionDialog(
     }
 }
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun StreamCardItem(
     stream: StremioStream,

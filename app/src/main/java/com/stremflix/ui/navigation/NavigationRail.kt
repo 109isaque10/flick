@@ -2,6 +2,9 @@ package com.stremflix.ui.navigation
 
 import android.app.Activity
 import androidx.annotation.StringRes
+import androidx.compose.foundation.interaction.MutableInteractionSource
+import androidx.compose.foundation.interaction.collectIsFocusedAsState
+import androidx.compose.foundation.layout.fillMaxSize
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -72,6 +75,9 @@ import com.stremflix.ui.theme.NetflixDimens
 import com.stremflix.ui.theme.NetflixLightGray
 import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
+import androidx.tv.material3.ClickableSurfaceDefaults
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Surface
 
 enum class NavDestination(@StringRes val labelRes: Int, val icon: ImageVector) {
     SEARCH(R.string.nav_search, Icons.Default.Search),
@@ -90,6 +96,7 @@ enum class NavDestination(@StringRes val labelRes: Int, val icon: ImageVector) {
  * Selected = red 3dp bar + white bold (the same marker the categories sidebar
  * and detail actions use). Focused = white 2dp border + faint white wash.
  */
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun RailItem(
     icon: ImageVector,
@@ -99,66 +106,75 @@ private fun RailItem(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val shape = RoundedCornerShape(4.dp)
+    val interactionSource = remember { MutableInteractionSource() }
+    val focused by interactionSource.collectIsFocusedAsState()
+    // Focus flips the row to the inverse (white pill / dark label) treatment,
+    // which is exactly what tv-material's own defaults resolve to.
+    val contentColor = when {
+        focused -> NetflixBlack
+        selected -> NetflixWhite
+        else -> NetflixLightGray
+    }
 
-    Row(
+    Surface(
+        onClick = onClick,
         modifier = modifier
             .fillMaxWidth()
             .height(NetflixDimens.RailItemHeight)
-            .padding(vertical = 2.dp)
-            .clip(shape)
-            .background(
-                color = when {
-                    focused -> NetflixWhite.copy(alpha = 0.12f)
-                    selected -> NetflixDarkSurface
-                    else -> Color.Transparent
-                }
-            )
-            .border(
-                width = if (focused) 2.dp else 0.dp,
-                color = if (focused) NetflixWhite else Color.Transparent,
-                shape = shape
-            )
-            .onFocusChanged { focused = it.isFocused }
-            .clickable { onClick() }
-            .padding(horizontal = 10.dp),
-        verticalAlignment = Alignment.CenterVertically
+            .padding(vertical = 2.dp),
+        shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+        colors = ClickableSurfaceDefaults.colors(
+            containerColor = if (selected) NetflixDarkSurface else Color.Transparent,
+            contentColor = contentColor,
+            focusedContainerColor = NetflixWhite,
+            focusedContentColor = NetflixBlack
+        ),
+        // The collapsed rail is only RailWidthCollapsed wide, so a 1.1 pop would
+        // clip; keep the box static and let the colours carry focus.
+        scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+        interactionSource = interactionSource
     ) {
-        Box(
+        Row(
             modifier = Modifier
-                .width(3.dp)
-                .height(22.dp)
-                .background(
-                    color = if (selected) NetflixRed else Color.Transparent,
-                    shape = RoundedCornerShape(2.dp)
-                )
-        )
-
-        Spacer(modifier = Modifier.width(if (expanded) 14.dp else 11.dp))
-
-        Icon(
-            imageVector = icon,
-            contentDescription = label,
-            tint = if (selected || focused) NetflixWhite else NetflixLightGray,
-            modifier = Modifier.size(22.dp)
-        )
-
-        if (expanded) {
-            Spacer(modifier = Modifier.width(14.dp))
-            Text(
-                text = label,
-                color = if (selected || focused) NetflixWhite else NetflixLightGray,
-                fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis
+                .fillMaxSize()
+                .padding(horizontal = 10.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Box(
+                modifier = Modifier
+                    .width(3.dp)
+                    .height(22.dp)
+                    .background(
+                        color = if (selected) NetflixRed else Color.Transparent,
+                        shape = RoundedCornerShape(2.dp)
+                    )
             )
+
+            Spacer(modifier = Modifier.width(if (expanded) 14.dp else 11.dp))
+
+            Icon(
+                imageVector = icon,
+                contentDescription = label,
+                tint = contentColor,
+                modifier = Modifier.size(22.dp)
+            )
+
+            if (expanded) {
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = label,
+                    color = contentColor,
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
 
-@OptIn(ExperimentalComposeUiApi::class)
+@OptIn(ExperimentalComposeUiApi::class, ExperimentalTvMaterial3Api::class)
 @Composable
 fun StremFlixNavRail(
     currentDestination: NavDestination,
@@ -306,50 +322,58 @@ fun StremFlixNavRail(
                         }
                 )
 
-                var reloadFocused by remember { mutableStateOf(false) }
-                val shape = RoundedCornerShape(4.dp)
-                Row(
+                val reloadInteraction = remember { MutableInteractionSource() }
+                val reloadFocused by reloadInteraction.collectIsFocusedAsState()
+                val reloadContentColor = if (reloadFocused) NetflixBlack else NetflixLightGray
+
+                Surface(
+                    onClick = {
+                        onReloadRequested()
+                        (context as? Activity)?.recreate()
+                    },
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(NetflixDimens.RailItemHeight)
                         .padding(vertical = 2.dp)
-                        .clip(shape)
-                        .background(if (reloadFocused) NetflixWhite.copy(alpha = 0.12f) else Color.Transparent)
-                        .border(
-                            width = if (reloadFocused) 2.dp else 0.dp,
-                            color = if (reloadFocused) NetflixWhite else Color.Transparent,
-                            shape = shape
-                        )
-                        .onFocusChanged { reloadFocused = it.isFocused }
                         .focusRequester(focusRequesters[destinations.size + 1])
                         .focusProperties {
                             up = focusRequesters[destinations.size]
                             down = FocusRequester.Cancel
-                        }
-                        .clickable {
-                            onReloadRequested()
-                            (context as? Activity)?.recreate()
-                        }
-                        .padding(horizontal = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically
+                        },
+                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
+                    colors = ClickableSurfaceDefaults.colors(
+                        containerColor = Color.Transparent,
+                        contentColor = reloadContentColor,
+                        focusedContainerColor = NetflixWhite,
+                        focusedContentColor = NetflixBlack
+                    ),
+                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
+                    interactionSource = reloadInteraction
                 ) {
-                    Box(modifier = Modifier.width(3.dp))
-                    Spacer(modifier = Modifier.width(if (isRailFocused) 14.dp else 11.dp))
-                    Icon(
-                        imageVector = Icons.Default.Refresh,
-                        contentDescription = stringResource(R.string.nav_reload),
-                        tint = if (reloadFocused) NetflixWhite else NetflixLightGray,
-                        modifier = Modifier.size(22.dp)
-                    )
-                    if (isRailFocused) {
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Text(
-                            text = stringResource(R.string.nav_reload),
-                            color = if (reloadFocused) NetflixWhite else NetflixLightGray,
-                            fontSize = 14.sp,
-                            fontWeight = FontWeight.Medium,
-                            maxLines = 1
+                    Row(
+                        modifier = Modifier
+                            .fillMaxSize()
+                            .padding(horizontal = 10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        Box(modifier = Modifier.width(3.dp))
+                        Spacer(modifier = Modifier.width(if (isRailFocused) 14.dp else 11.dp))
+                        Icon(
+                            imageVector = Icons.Default.Refresh,
+                            contentDescription = stringResource(R.string.nav_reload),
+                            tint = reloadContentColor,
+                            modifier = Modifier.size(22.dp)
                         )
+                        if (isRailFocused) {
+                            Spacer(modifier = Modifier.width(14.dp))
+                            Text(
+                                text = stringResource(R.string.nav_reload),
+                                color = reloadContentColor,
+                                fontSize = 14.sp,
+                                fontWeight = FontWeight.Medium,
+                                maxLines = 1
+                            )
+                        }
                     }
                 }
             }

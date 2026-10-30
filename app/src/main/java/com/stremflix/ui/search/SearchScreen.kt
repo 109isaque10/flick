@@ -31,11 +31,12 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Clear
 import androidx.compose.material.icons.filled.Search
-import androidx.compose.material3.Button
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.Text
+import androidx.tv.material3.Button
+import androidx.tv.material3.ButtonDefaults
+import androidx.tv.material3.ExperimentalTvMaterial3Api
+import androidx.tv.material3.Icon
+import androidx.tv.material3.IconButton
+import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -73,6 +74,7 @@ import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
 import com.stremflix.ui.theme.isCompactScreen
 
+@OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 fun SearchScreen(
     searchQuery: String,
@@ -373,18 +375,18 @@ fun SearchScreen(
                     modifier = Modifier.fillMaxWidth(),
                     horizontalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
-                    var spaceFocused by remember { mutableStateOf(false) }
                     Button(
                         onClick = { onQueryChange("$searchQuery ") },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (spaceFocused) Color.White.copy(alpha = 0.25f) else NetflixDarkSurface,
-                            contentColor = NetflixWhite
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixDarkSurface,
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixWhite,
+                            focusedContentColor = NetflixBlack
                         ),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
                         modifier = Modifier
                             .weight(1.2f)
                             .height(38.dp)
-                            .onFocusChanged { spaceFocused = it.isFocused }
                     ) {
                         Text(
                             text = stringResource(R.string.search_space),
@@ -393,38 +395,38 @@ fun SearchScreen(
                         )
                     }
 
-                    var bkFocused by remember { mutableStateOf(false) }
                     Button(
                         onClick = {
                             if (searchQuery.isNotEmpty()) {
                                 onQueryChange(searchQuery.dropLast(1))
                             }
                         },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (bkFocused) Color.White.copy(alpha = 0.25f) else NetflixDarkSurface,
-                            contentColor = NetflixWhite
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixDarkSurface,
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixWhite,
+                            focusedContentColor = NetflixBlack
                         ),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
                         modifier = Modifier
                             .weight(1.2f)
                             .height(38.dp)
-                            .onFocusChanged { bkFocused = it.isFocused }
                     ) {
                         Icon(Icons.Default.Backspace, contentDescription = "Backspace", modifier = Modifier.size(16.dp))
                     }
 
-                    var clearFocused by remember { mutableStateOf(false) }
                     Button(
                         onClick = { onQueryChange("") },
-                        colors = ButtonDefaults.buttonColors(
-                            containerColor = if (clearFocused) Color.White.copy(alpha = 0.25f) else NetflixDarkSurface,
-                            contentColor = NetflixWhite
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixDarkSurface,
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixWhite,
+                            focusedContentColor = NetflixBlack
                         ),
-                        shape = RoundedCornerShape(4.dp),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
                         modifier = Modifier
                             .weight(1f)
                             .height(38.dp)
-                            .onFocusChanged { clearFocused = it.isFocused }
                     ) {
                         Text(
                             text = stringResource(R.string.search_clear),
