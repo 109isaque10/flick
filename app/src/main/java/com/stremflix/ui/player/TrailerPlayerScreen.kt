@@ -219,6 +219,8 @@ fun TrailerPlayerScreen(
                     keepScreenOn = true
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setBackgroundColor(android.graphics.Color.BLACK)
+                    setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    isFocusable = false
                     this.player = exoPlayer
                 }
             },

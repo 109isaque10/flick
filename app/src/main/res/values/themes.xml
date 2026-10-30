@@ -1,5 +1,9 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
 
-    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar" />
+    <style name="Theme.MyApplication" parent="android:Theme.DeviceDefault.NoActionBar">
+        <!-- Opaque black window so no light theme/OS canvas shows behind the
+             Compose tree or around the fullscreen player. -->
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
 </resources>

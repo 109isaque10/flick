@@ -52,6 +52,7 @@ import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -160,17 +161,19 @@ private fun RailItem(
                 modifier = Modifier.size(22.dp)
             )
 
-            if (expanded) {
-                Spacer(modifier = Modifier.width(14.dp))
-                Text(
-                    text = label,
-                    color = contentColor,
-                    fontSize = 14.sp,
-                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis
-                )
-            }
+            Spacer(modifier = Modifier.width(14.dp))
+            // Kept in the tree and faded out rather than composed on demand, so
+            // opening the rail does not inflate/measure text nodes on the key
+            // press (a large part of the sidebar's perceived delay).
+            Text(
+                text = label,
+                color = contentColor,
+                fontSize = 14.sp,
+                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.alpha(if (expanded) 1f else 0f)
+            )
         }
     }
 }
@@ -181,6 +184,7 @@ fun StremFlixNavRail(
     currentDestination: NavDestination,
     onDestinationSelected: (NavDestination) -> Unit,
     onReloadRequested: () -> Unit = {},
+    entryFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     var railHasFocus by remember { mutableStateOf(false) }
@@ -295,30 +299,36 @@ fun StremFlixNavRail(
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
-                    if (isRailFocused) {
-                        Spacer(modifier = Modifier.width(12.dp))
-                        Column {
-                            Text(
-                                text = stringResource(R.string.user_profile_master),
-                                color = NetflixWhite,
-                                fontSize = 13.sp,
-                                fontWeight = FontWeight.Bold,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                            Text(
-                                text = stringResource(R.string.user_profile_switch),
-                                color = NetflixLightGray,
-                                fontSize = 11.sp,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis
-                            )
-                        }
+                    Spacer(modifier = Modifier.width(12.dp))
+                    // Faded rather than composed on demand (see RailItem): the
+                    // header used to inflate/measure its text when the rail opened.
+                    Column(
+                        modifier = Modifier.alpha(if (isRailFocused) 1f else 0f)
+                    ) {
+                        Text(
+                            text = stringResource(R.string.user_profile_master),
+                            color = NetflixWhite,
+                            fontSize = 13.sp,
+                            fontWeight = FontWeight.Bold,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                        Text(
+                            text = stringResource(R.string.user_profile_switch),
+                            color = NetflixLightGray,
+                            fontSize = 11.sp,
+                            maxLines = 1,
+                            overflow = TextOverflow.Ellipsis
+                        )
                     }
                 }
 
                 Spacer(modifier = Modifier.height(12.dp))
 
+                // The explicit entry target: LEFT out of the content pane jumps
+                // straight here instead of running a spatial search over the
+                // whole screen. Settings/Reload fall back to the last section.
+                val entryIndex = selectedIndex.coerceIn(0, destinations.lastIndex)
                 destinations.forEachIndexed { index, dest ->
                     RailItem(
                         icon = dest.icon,
@@ -328,6 +338,13 @@ fun StremFlixNavRail(
                         onClick = { onDestinationSelected(dest) },
                         modifier = Modifier
                             .focusRequester(focusRequesters[index])
+                            .then(
+                                if (entryFocusRequester != null && index == entryIndex) {
+                                    Modifier.focusRequester(entryFocusRequester)
+                                } else {
+                                    Modifier
+                                }
+                            )
                             .focusProperties {
                                 up = if (index == 0) {
                                     FocusRequester.Cancel

@@ -647,6 +647,9 @@ fun PlayerScreen(
                     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
                     setBackgroundColor(android.graphics.Color.BLACK)
                     setShutterBackgroundColor(android.graphics.Color.BLACK)
+                    // Never let the TV OS draw a default (light) focus highlight
+                    // over the video surface.
+                    isFocusable = false
                     this.player = exoPlayer
                     subtitleView?.apply {
                         setUserDefaultStyle()

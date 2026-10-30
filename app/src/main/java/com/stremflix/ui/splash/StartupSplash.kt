@@ -99,6 +99,11 @@ fun StartupSplash(
                 factory = { ctx ->
                     PlayerView(ctx).apply {
                         useController = false
+                        // Neutralise OEM theme/canvas defaults: a light default
+                        // background here reads as a white haze over the intro.
+                        setBackgroundColor(android.graphics.Color.BLACK)
+                        setShutterBackgroundColor(android.graphics.Color.BLACK)
+                        isFocusable = false
                         this.player = exoPlayer
                         layoutParams = FrameLayout.LayoutParams(
                             ViewGroup.LayoutParams.MATCH_PARENT,
