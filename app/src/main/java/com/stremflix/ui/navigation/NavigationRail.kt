@@ -47,12 +47,12 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
@@ -98,6 +98,13 @@ enum class NavDestination(@StringRes val labelRes: Int, val icon: ImageVector) {
  * Selected = red 3dp bar + white bold (the same marker the categories sidebar
  * and detail actions use). Focused = white 2dp border + faint white wash.
  */
+/**
+ * Entry point into the navigation rail, published to the content pane. List
+ * cards read this to route LEFT straight into the sidebar instead of running a
+ * 2D spatial focus search across every card on screen.
+ */
+val LocalNavRailFocusRequester = compositionLocalOf<FocusRequester?> { null }
+
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun RailItem(
@@ -161,19 +168,17 @@ private fun RailItem(
                 modifier = Modifier.size(22.dp)
             )
 
-            Spacer(modifier = Modifier.width(14.dp))
-            // Kept in the tree and faded out rather than composed on demand, so
-            // opening the rail does not inflate/measure text nodes on the key
-            // press (a large part of the sidebar's perceived delay).
-            Text(
-                text = label,
-                color = contentColor,
-                fontSize = 14.sp,
-                fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-                modifier = Modifier.alpha(if (expanded) 1f else 0f)
-            )
+            if (expanded) {
+                Spacer(modifier = Modifier.width(14.dp))
+                Text(
+                    text = label,
+                    color = contentColor,
+                    fontSize = 14.sp,
+                    fontWeight = if (selected) FontWeight.Bold else FontWeight.Medium,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis
+                )
+            }
         }
     }
 }
@@ -299,27 +304,25 @@ fun StremFlixNavRail(
                         fontWeight = FontWeight.Black,
                         modifier = Modifier.padding(horizontal = 4.dp)
                     )
-                    Spacer(modifier = Modifier.width(12.dp))
-                    // Faded rather than composed on demand (see RailItem): the
-                    // header used to inflate/measure its text when the rail opened.
-                    Column(
-                        modifier = Modifier.alpha(if (isRailFocused) 1f else 0f)
-                    ) {
-                        Text(
-                            text = stringResource(R.string.user_profile_master),
-                            color = NetflixWhite,
-                            fontSize = 13.sp,
-                            fontWeight = FontWeight.Bold,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
-                        Text(
-                            text = stringResource(R.string.user_profile_switch),
-                            color = NetflixLightGray,
-                            fontSize = 11.sp,
-                            maxLines = 1,
-                            overflow = TextOverflow.Ellipsis
-                        )
+                    if (isRailFocused) {
+                        Spacer(modifier = Modifier.width(12.dp))
+                        Column {
+                            Text(
+                                text = stringResource(R.string.user_profile_master),
+                                color = NetflixWhite,
+                                fontSize = 13.sp,
+                                fontWeight = FontWeight.Bold,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                            Text(
+                                text = stringResource(R.string.user_profile_switch),
+                                color = NetflixLightGray,
+                                fontSize = 11.sp,
+                                maxLines = 1,
+                                overflow = TextOverflow.Ellipsis
+                            )
+                        }
                     }
                 }
 

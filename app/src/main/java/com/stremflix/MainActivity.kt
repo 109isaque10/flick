@@ -19,6 +19,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -50,6 +51,7 @@ import com.stremflix.ui.categories.GenreItem
 import com.stremflix.ui.detail.DetailScreen
 import com.stremflix.ui.detail.StreamSelectionDialog
 import com.stremflix.ui.home.HomeScreen
+import com.stremflix.ui.navigation.LocalNavRailFocusRequester
 import com.stremflix.ui.navigation.NavDestination
 import com.stremflix.ui.navigation.StremFlixBottomNavBar
 import com.stremflix.ui.navigation.StremFlixNavRail
@@ -924,13 +926,16 @@ fun MainAppContent(
                             .fillMaxSize()
                             .padding(start = NetflixDimens.RailWidthCollapsed)
                             .focusRequester(contentFocusRequester)
-                            .focusProperties { left = railFocusRequester }
                             .clickable(
                                 interactionSource = contentInteractionSource,
                                 indication = null
                             ) { }
                     ) {
-                        screenContent()
+                        CompositionLocalProvider(
+                            LocalNavRailFocusRequester provides railFocusRequester
+                        ) {
+                            screenContent()
+                        }
                     }
                     StremFlixNavRail(
                         currentDestination = currentNavDestination,

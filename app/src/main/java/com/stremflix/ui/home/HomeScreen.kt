@@ -81,6 +81,7 @@ import com.stremflix.ui.theme.NetflixLightGray
 import com.stremflix.ui.theme.NetflixMutedGray
 import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
+import com.stremflix.ui.navigation.LocalNavRailFocusRequester
 import com.stremflix.ui.theme.isCompactScreen
 import com.stremflix.ui.theme.isCompactWidth
 import androidx.compose.runtime.LaunchedEffect
@@ -367,6 +368,7 @@ fun HeroSection(
     val heroFocusRequester = remember { FocusRequester() }
     val overviewFocusRequester = remember { FocusRequester() }
     val hasOverview = item.overview.isNotBlank()
+    val navRail = LocalNavRailFocusRequester.current
     LaunchedEffect(Unit) {
         // Land on Play with the billboard in frame. Retry across frames because
         // the hero is not attached on the first composition, and check the
@@ -534,6 +536,7 @@ fun HeroSection(
                         .focusProperties {
                             up = FocusRequester.Cancel
                             down = heroFocusRequester
+                            navRail?.let { left = it }
                         }
                         .clickable { overviewExpanded = !overviewExpanded }
                         .padding(6.dp)
@@ -558,6 +561,7 @@ fun HeroSection(
                         .focusRequester(heroFocusRequester)
                         .focusProperties {
                             up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
+                            navRail?.let { left = it }
                         },
                     colors = ButtonDefaults.colors(
                         containerColor = NetflixWhite,
@@ -667,6 +671,9 @@ fun ContentRowSection(
         if (isPhone) NetflixDimens.RowContentPaddingMobile else NetflixDimens.RowContentPadding
     val cardWidth = if (isPhone) NetflixDimens.PosterWidthMobile else NetflixDimens.PosterWidthTv
     val displayTitle = title.ifEmpty { titleRes?.let { stringResource(it) } ?: "" }
+    // D-pad entry into the sidebar: only the leftmost card needs the explicit
+    // target, so row-internal LEFT navigation keeps working.
+    val navRail = LocalNavRailFocusRequester.current
 
     Column(
         modifier = modifier
@@ -703,7 +710,8 @@ fun ContentRowSection(
                     onClick = { onMediaSelected(item) },
                     cardWidth = cardWidth,
                     rank = if (spotlightType == SpotlightType.TOP_250) index + 1 else null,
-                    originalBadge = spotlightType == SpotlightType.N_SERIES
+                    originalBadge = spotlightType == SpotlightType.N_SERIES,
+                    navRailFocusRequester = if (index == 0) navRail else null
                 )
             }
         }
@@ -717,7 +725,8 @@ fun MediaCard(
     modifier: Modifier = Modifier,
     cardWidth: Dp? = NetflixDimens.PosterWidth,
     rank: Int? = null,
-    originalBadge: Boolean = false
+    originalBadge: Boolean = false,
+    navRailFocusRequester: FocusRequester? = null
 ) {
     var isFocused by remember { mutableStateOf(false) }
     val scaleAnim by animateFloatAsState(
@@ -741,6 +750,13 @@ fun MediaCard(
                 width = if (isFocused) NetflixDimens.CardFocusBorder else 0.dp,
                 color = if (isFocused) NetflixWhite else Color.Transparent,
                 shape = RoundedCornerShape(NetflixDimens.CardRadius)
+            )
+            .then(
+                if (navRailFocusRequester != null) {
+                    Modifier.focusProperties { left = navRailFocusRequester }
+                } else {
+                    Modifier
+                }
             )
             .onFocusChanged { isFocused = it.isFocused }
             .clickable { onClick() }
