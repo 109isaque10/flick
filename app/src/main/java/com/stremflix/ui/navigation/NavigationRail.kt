@@ -47,7 +47,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
@@ -98,13 +97,6 @@ enum class NavDestination(@StringRes val labelRes: Int, val icon: ImageVector) {
  * Selected = red 3dp bar + white bold (the same marker the categories sidebar
  * and detail actions use). Focused = white 2dp border + faint white wash.
  */
-/**
- * Entry point into the navigation rail, published to the content pane. List
- * cards read this to route LEFT straight into the sidebar instead of running a
- * 2D spatial focus search across every card on screen.
- */
-val LocalNavRailFocusRequester = compositionLocalOf<FocusRequester?> { null }
-
 @OptIn(ExperimentalTvMaterial3Api::class)
 @Composable
 private fun RailItem(
@@ -189,7 +181,6 @@ fun StremFlixNavRail(
     currentDestination: NavDestination,
     onDestinationSelected: (NavDestination) -> Unit,
     onReloadRequested: () -> Unit = {},
-    entryFocusRequester: FocusRequester? = null,
     modifier: Modifier = Modifier
 ) {
     var railHasFocus by remember { mutableStateOf(false) }
@@ -328,10 +319,6 @@ fun StremFlixNavRail(
 
                 Spacer(modifier = Modifier.height(12.dp))
 
-                // The explicit entry target: LEFT out of the content pane jumps
-                // straight here instead of running a spatial search over the
-                // whole screen. Settings/Reload fall back to the last section.
-                val entryIndex = selectedIndex.coerceIn(0, destinations.lastIndex)
                 destinations.forEachIndexed { index, dest ->
                     RailItem(
                         icon = dest.icon,
@@ -341,13 +328,6 @@ fun StremFlixNavRail(
                         onClick = { onDestinationSelected(dest) },
                         modifier = Modifier
                             .focusRequester(focusRequesters[index])
-                            .then(
-                                if (entryFocusRequester != null && index == entryIndex) {
-                                    Modifier.focusRequester(entryFocusRequester)
-                                } else {
-                                    Modifier
-                                }
-                            )
                             .focusProperties {
                                 up = if (index == 0) {
                                     FocusRequester.Cancel
