@@ -637,17 +637,29 @@ private fun TvDetailContent(
     // Landing focus for the detail page: the primary action is what a viewer
     // wants, and starting elsewhere forced a D-pad hunt on every open.
     val playFocusRequester = remember { FocusRequester() }
+    // Hoisted so the page can settle at its bottom after focus lands: a plain
+    // focus request centres the Play action and scrolls the title/synopsis out of
+    // frame, which is the opposite of what the 10-foot layout wants. Play should
+    // sit at the bottom with the whole info block visible above it.
+    val detailScrollState = rememberScrollState()
     LaunchedEffect(mediaItem.id, showMoreEpisodesView) {
         if (!showMoreEpisodesView) {
             // Retry across frames: the page (and the Play button) is not attached
             // on the first frame, and a single attempt used to fall through to
             // whatever focusable the tree supplied, landing on the upper chrome.
-            repeat(4) {
+            // Check the boolean requestFocus() returns: it reports false without
+            // throwing while the node is not ready.
+            var focusGained = false
+            repeat(6) {
+                if (focusGained) return@repeat
                 withFrameNanos { }
-                if (runCatching { playFocusRequester.requestFocus() }.isSuccess) {
-                    return@LaunchedEffect
-                }
+                focusGained =
+                    runCatching { playFocusRequester.requestFocus() }.getOrDefault(false)
             }
+            // Let the focus-driven scroll settle, then pin the column to its
+            // bottom so Play sits at the bottom of the viewport.
+            repeat(2) { withFrameNanos { } }
+            runCatching { detailScrollState.scrollTo(detailScrollState.maxValue) }
         }
     }
 
@@ -777,7 +789,7 @@ private fun TvDetailContent(
                     .widthIn(max = 560.dp)
                     .statusBarsPadding()
                     .padding(start = 56.dp, end = 40.dp, top = 88.dp, bottom = 36.dp)
-                    .verticalScroll(rememberScrollState())
+                    .verticalScroll(detailScrollState)
             ) {
                 DetailTitleLogo(
                     mediaItem = mediaItem,

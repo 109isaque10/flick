@@ -86,6 +86,7 @@ import com.stremflix.ui.theme.isCompactWidth
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.focusTarget
@@ -364,9 +365,20 @@ fun HeroSection(
     // Requesting focus on the Play button directly used to scroll the LazyColumn
     // until the hero's upper half (and the artwork) left the viewport.
     val heroFocusRequester = remember { FocusRequester() }
+    val overviewFocusRequester = remember { FocusRequester() }
+    val hasOverview = item.overview.isNotBlank()
     LaunchedEffect(Unit) {
-        withFrameNanos { }
-        runCatching { heroFocusRequester.requestFocus() }
+        // Land on Play with the billboard in frame. Retry across frames because
+        // the hero is not attached on the first composition, and check the
+        // boolean that requestFocus() returns: it reports false without throwing
+        // while the node is not ready, so runCatching's flag alone quits too early
+        // and leaves focus on whatever the tree supplied first.
+        repeat(6) {
+            withFrameNanos { }
+            if (runCatching { heroFocusRequester.requestFocus() }.getOrDefault(false)) {
+                return@LaunchedEffect
+            }
+        }
     }
 
     Box(
@@ -374,25 +386,6 @@ fun HeroSection(
             .fillMaxWidth()
             .height(heroHeight)
     ) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .fillMaxWidth()
-                .height(1.dp)
-                .focusRequester(heroFocusRequester)
-                .focusTarget()
-                .onPreviewKeyEvent { event ->
-                    if (event.type == KeyEventType.KeyDown &&
-                        (event.key == Key.DirectionCenter || event.key == Key.Enter)
-                    ) {
-                        onPlayClicked()
-                        true
-                    } else {
-                        false
-                    }
-                }
-        )
-
         AsyncImage(
             model = item.fullBackdropUrl ?: item.fullPosterUrl,
             contentDescription = item.title,
@@ -516,20 +509,56 @@ fun HeroSection(
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Text(
-                text = item.overview,
-                color = NetflixLightGray,
-                fontSize = 12.sp,
-                maxLines = if (isPhone) 2 else 3,
-                overflow = TextOverflow.Ellipsis,
-                lineHeight = 16.sp
-            )
+            if (hasOverview) {
+                // Focusable synopsis, mirroring the detail page. It is the top of
+                // the feed, so it cancels UP: focus used to fall through to the
+                // navigation rail from here and strand the viewer there, and OK
+                // expands the full text in place.
+                var overviewExpanded by remember(item.id) { mutableStateOf(false) }
+                var overviewFocused by remember { mutableStateOf(false) }
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .clip(RoundedCornerShape(8.dp))
+                        .background(
+                            if (overviewFocused) NetflixWhite.copy(alpha = 0.12f)
+                            else Color.Transparent
+                        )
+                        .border(
+                            width = if (overviewFocused) 2.dp else 0.dp,
+                            color = if (overviewFocused) NetflixWhite else Color.Transparent,
+                            shape = RoundedCornerShape(8.dp)
+                        )
+                        .onFocusChanged { overviewFocused = it.isFocused }
+                        .focusRequester(overviewFocusRequester)
+                        .focusProperties {
+                            up = FocusRequester.Cancel
+                            down = heroFocusRequester
+                        }
+                        .clickable { overviewExpanded = !overviewExpanded }
+                        .padding(6.dp)
+                ) {
+                    Text(
+                        text = item.overview,
+                        color = NetflixLightGray,
+                        fontSize = 12.sp,
+                        maxLines = if (overviewExpanded) Int.MAX_VALUE else if (isPhone) 2 else 3,
+                        overflow = TextOverflow.Ellipsis,
+                        lineHeight = 16.sp
+                    )
+                }
+            }
 
             Spacer(modifier = Modifier.height(14.dp))
 
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Button(
                     onClick = onPlayClicked,
+                    modifier = Modifier
+                        .focusRequester(heroFocusRequester)
+                        .focusProperties {
+                            up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
+                        },
                     colors = ButtonDefaults.colors(
                         containerColor = NetflixWhite,
                         contentColor = NetflixBlack,
@@ -556,6 +585,11 @@ fun HeroSection(
 
                 OutlinedButton(
                     onClick = onInfoClicked,
+                    modifier = Modifier.focusProperties {
+                        // Same guard as Play: without it UP from the billboard
+                        // escaped into the sidebar.
+                        up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
+                    },
                     shape = OutlinedButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
                     border = OutlinedButtonDefaults.border(
                         border = Border(

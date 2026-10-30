@@ -422,9 +422,11 @@ fun PlayerScreen(
     // node was focused, so remote keys (including OK) never reached this screen.
     // This sink is composed whenever the overlay is unavailable and restores it.
     val playerFocusSink = remember { FocusRequester() }
-    // Landing target inside the episodes drawer (the selected season chip), so
-    // opening the drawer actually moves D-pad focus off the player buttons.
+    // Landing targets inside the episodes drawer, so opening it actually moves
+    // D-pad focus off the player buttons: the first episode row is the primary
+    // target; the selected season chip is the fallback when the list is empty.
     val drawerFocusRequester = remember { FocusRequester() }
+    val drawerEpisodeFocusRequester = remember { FocusRequester() }
     LaunchedEffect(isControlsVisible, playerError) {
         // The overlay's focus target leaves composition in the same frame the
         // controls hide, so the sink may not be attached on the first attempt.
@@ -435,22 +437,38 @@ fun PlayerScreen(
             val target =
                 if (isControlsVisible && playerError == null) controlsFocusRequester
                 else playerFocusSink
-            if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
+            if (runCatching { target.requestFocus() }.getOrDefault(false)) {
+                return@LaunchedEffect
+            }
         }
     }
 
     LaunchedEffect(showEpisodesDrawer) {
-        // The drawer's first focusable node (selected season chip inside a
-        // LazyRow) is not attached on the frame the drawer opens, so a single
-        // attempt silently fails and focus stays on the player buttons.
-        repeat(4) {
-            withFrameNanos { }
-            val target =
-                if (showEpisodesDrawer) drawerFocusRequester
-                else if (isControlsVisible && playerError == null) controlsFocusRequester
-                else null
-            if (target != null && runCatching { target.requestFocus() }.isSuccess) {
-                return@LaunchedEffect
+        if (showEpisodesDrawer) {
+            // The drawer mounts in the same frame it is opened, so no focus
+            // target is attached yet. Retry across frames, and check the boolean
+            // requestFocus() returns: it reports false without throwing while the
+            // node is not ready, so runCatching's flag alone stopped the retry on
+            // the first frame and focus stayed on the player controls.
+            repeat(8) {
+                withFrameNanos { }
+                if (runCatching { drawerEpisodeFocusRequester.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+                if (runCatching { drawerFocusRequester.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+            }
+        } else {
+            repeat(3) {
+                withFrameNanos { }
+                val target =
+                    if (isControlsVisible && playerError == null) controlsFocusRequester else null
+                if (target != null &&
+                    runCatching { target.requestFocus() }.getOrDefault(false)
+                ) {
+                    return@LaunchedEffect
+                }
             }
         }
     }
@@ -1232,10 +1250,9 @@ fun PlayerScreen(
                                                 shape = RoundedCornerShape(4.dp)
                                             )
                                             .onFocusChanged { chipFocused = it.isFocused }
-                                            .clickable {
-                                                drawerSeason = seasonNumber
-                                                lastInteractionTime = System.currentTimeMillis()
-                                            }
+                                            // focusRequester must precede clickable: attached
+                                            // after it, the requester sits inside the focus
+                                            // target, so requestFocus() silently fails.
                                             .then(
                                                 if (isSelected) {
                                                     Modifier.focusRequester(drawerFocusRequester)
@@ -1243,6 +1260,10 @@ fun PlayerScreen(
                                                     Modifier
                                                 }
                                             )
+                                            .clickable {
+                                                drawerSeason = seasonNumber
+                                                lastInteractionTime = System.currentTimeMillis()
+                                            }
                                             .padding(horizontal = 14.dp, vertical = 8.dp)
                                     ) {
                                         Text(
@@ -1276,7 +1297,7 @@ fun PlayerScreen(
                                 itemsIndexed(
                                     shownEpisodes,
                                     key = { _, ep -> "${ep.seasonNumber}_${ep.episodeNumber}" }
-                                ) { _, ep ->
+                                ) { index, ep ->
                                     val isCurrent = ep.seasonNumber == (currentSeasonNumber
                                         ?: 1) && ep.episodeNumber == (currentEpisodeNumber ?: 1)
                                     val progress = episodeProgressMap["s${ep.seasonNumber}_e${ep.episodeNumber}"] ?: 0f
@@ -1286,6 +1307,13 @@ fun PlayerScreen(
                                     Row(
                                         modifier = Modifier
                                             .fillMaxWidth()
+                                            .then(
+                                                if (index == 0) {
+                                                    Modifier.focusRequester(drawerEpisodeFocusRequester)
+                                                } else {
+                                                    Modifier
+                                                }
+                                            )
                                             .clip(RoundedCornerShape(4.dp))
                                             .background(
                                                 if (epItemFocused) Color.White.copy(alpha = 0.12f)

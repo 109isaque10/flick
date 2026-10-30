@@ -190,6 +190,14 @@ fun StremFlixNavRail(
     // been left, or when the user actually pressed a key while inside it.
     var railEngaged by remember { mutableStateOf(false) }
     var sawFocusLoss by remember { mutableStateOf(false) }
+    // The rail must not unfurl from the focus Compose parks on it during the
+    // first composition, so auto-expansion is only allowed once the screen has
+    // settled.
+    var railReady by remember { mutableStateOf(false) }
+    LaunchedEffect(Unit) {
+        repeat(3) { withFrameNanos { } }
+        railReady = true
+    }
     val isRailFocused = railHasFocus && railEngaged
     // Snap instead of animating: every animation frame remeasured the whole
     // screen subtree (every poster row), which is what made the sidebar take
@@ -225,7 +233,9 @@ fun StremFlixNavRail(
             val target = focusRequesters[selectedIndex]
             repeat(3) {
                 withFrameNanos { }
-                if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
+                if (runCatching { target.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
             }
         }
     }
@@ -237,7 +247,11 @@ fun StremFlixNavRail(
             .statusBarsPadding()
             .onFocusChanged { state ->
                 if (state.hasFocus && !railHasFocus) {
-                    if (sawFocusLoss) railEngaged = true
+                    // Expand as soon as the viewer deliberately navigates into the
+                    // sidebar. The old gate waited for a second key press, because
+                    // sawFocusLoss stayed false when focus had never left the rail
+                    // (the hero simply never took focus), which read as a 1.5s lag.
+                    if (railReady || sawFocusLoss) railEngaged = true
                 } else if (!state.hasFocus && railHasFocus) {
                     railEngaged = false
                     sawFocusLoss = true

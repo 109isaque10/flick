@@ -523,8 +523,8 @@ fun TvThresholdRow(
     modifier: Modifier = Modifier
 ) {
     // Mobile gets a touch-friendly control: a draggable bar for fine tuning plus
-    // two arrow buttons that jump between the same presets the TV stepper cycles.
-    // Only the TV path keeps the single focusable D-pad stepper.
+    // two arrow buttons that step with the same coarse-to-fine increments as the
+    // TV stepper. Only the TV path keeps the single focusable D-pad stepper.
     if (isCompactScreen()) {
         MobileThresholdRow(label, currentValue, onValueChange, min, max, modifier)
         return
@@ -639,8 +639,9 @@ fun TvThresholdRow(
 
 /**
  * Mobile counterpart to [TvThresholdRow]: a draggable bar in the middle for
- * fine tuning, flanked by two arrow buttons that jump between presets, so touch
- * users get both the coarse presets and any precise value.
+ * fine tuning, flanked by two arrow buttons that step the value with the same
+ * coarse-to-fine increments as the TV stepper, so touch users can reach any
+ * value (not just the presets).
  */
 @Composable
 private fun MobileThresholdRow(
@@ -651,7 +652,6 @@ private fun MobileThresholdRow(
     max: Int,
     modifier: Modifier = Modifier
 ) {
-    val presets = remember(min, max) { THRESHOLD_PRESETS.filter { it in min..max } }
     val shape = RoundedCornerShape(8.dp)
     Column(
         modifier = modifier
@@ -682,9 +682,9 @@ private fun MobileThresholdRow(
             modifier = Modifier.fillMaxWidth()
         ) {
             ThresholdArrow(symbol = "◀") {
-                onValueChange(
-                    presets.lastOrNull { it < currentValue } ?: presets.firstOrNull() ?: currentValue
-                )
+                // Fine tuning, matching the TV stepper's variable step, so the
+                // arrows are not just a preset cycler on touch devices.
+                onValueChange(stepThreshold(currentValue, -1, min, max))
             }
             Slider(
                 value = currentValue.toFloat(),
@@ -700,9 +700,7 @@ private fun MobileThresholdRow(
                     .padding(horizontal = 12.dp)
             )
             ThresholdArrow(symbol = "▶") {
-                onValueChange(
-                    presets.firstOrNull { it > currentValue } ?: presets.lastOrNull() ?: currentValue
-                )
+                onValueChange(stepThreshold(currentValue, 1, min, max))
             }
         }
     }
