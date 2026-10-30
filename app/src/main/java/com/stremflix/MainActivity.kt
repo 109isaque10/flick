@@ -1,6 +1,7 @@
 package com.stremflix
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.net.Uri
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -76,7 +77,13 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        enableEdgeToEdge()
+        // Edge-to-edge is a phone concern. Android TV is fullscreen by default,
+        // so on TV the inset machinery only adds per-key relayout work while
+        // offering no bars to protect. Skip it there.
+        val isTelevision =
+            (resources.configuration.uiMode and Configuration.UI_MODE_TYPE_MASK) ==
+                Configuration.UI_MODE_TYPE_TELEVISION
+        if (!isTelevision) enableEdgeToEdge()
 
         db = StremFlixDatabase.getDatabase(this)
         settingsDataStore = SettingsDataStore(this)
