@@ -343,7 +343,10 @@ fun MainAppContent(
         // One character matches nearly everything and costs the same request as
         // a real query on a TV stick, so wait for a minimally useful prefix.
         if (query.trim().length >= 2) {
-            delay(400)
+            // The effect restarts on every keystroke, so this is a true
+            // "stopped typing" debounce. 2s of quiet avoids firing a request
+            // almost every second while the viewer is still entering text.
+            delay(2000)
             // The TV keyboard fires one change per key, so identical consecutive
             // queries (e.g. spaces trimmed by the field) reuse the last payload.
             if (query != lastSearchQuery) {

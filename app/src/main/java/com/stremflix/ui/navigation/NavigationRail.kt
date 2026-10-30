@@ -47,6 +47,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
@@ -210,6 +211,24 @@ fun StremFlixNavRail(
     }
 
     val focusRequesters = remember { List(destinations.size + 2) { FocusRequester() } }
+
+    // Re-entering the rail must land on the current section, not on whichever
+    // item happens to sit geometrically closest to the row the viewer left from
+    // (that made re-entry feel random). railEngaged only becomes true when the
+    // rail was left and then deliberately re-entered, so the launch-time focus
+    // that Compose parks on the rail cannot hijack the hero's first focus.
+    val selectedIndex = destinations.indexOf(currentDestination).let {
+        if (it >= 0) it else if (currentDestination == NavDestination.SETTINGS) destinations.size else 0
+    }
+    LaunchedEffect(railEngaged) {
+        if (railEngaged) {
+            val target = focusRequesters[selectedIndex]
+            repeat(3) {
+                withFrameNanos { }
+                if (runCatching { target.requestFocus() }.isSuccess) return@LaunchedEffect
+            }
+        }
+    }
 
     Box(
         modifier = modifier

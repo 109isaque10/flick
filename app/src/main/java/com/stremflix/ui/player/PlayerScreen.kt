@@ -440,12 +440,17 @@ fun PlayerScreen(
     }
 
     LaunchedEffect(showEpisodesDrawer) {
-        withFrameNanos { }
-        runCatching {
-            if (showEpisodesDrawer) {
-                drawerFocusRequester.requestFocus()
-            } else if (isControlsVisible && playerError == null) {
-                controlsFocusRequester.requestFocus()
+        // The drawer's first focusable node (selected season chip inside a
+        // LazyRow) is not attached on the frame the drawer opens, so a single
+        // attempt silently fails and focus stays on the player buttons.
+        repeat(4) {
+            withFrameNanos { }
+            val target =
+                if (showEpisodesDrawer) drawerFocusRequester
+                else if (isControlsVisible && playerError == null) controlsFocusRequester
+                else null
+            if (target != null && runCatching { target.requestFocus() }.isSuccess) {
+                return@LaunchedEffect
             }
         }
     }

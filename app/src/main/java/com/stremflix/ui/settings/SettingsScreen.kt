@@ -2,6 +2,7 @@ package com.stremflix.ui.settings
 
 import android.view.KeyEvent
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -17,6 +18,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
@@ -25,6 +27,8 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.KeyboardActions
 import androidx.compose.foundation.text.KeyboardOptions
+import androidx.compose.material3.Slider
+import androidx.compose.material3.SliderDefaults
 import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -70,6 +74,7 @@ import com.stremflix.ui.theme.NetflixLightGray
 import com.stremflix.ui.theme.NetflixRed
 import com.stremflix.ui.theme.NetflixWhite
 import com.stremflix.ui.theme.isCompactScreen
+import kotlin.math.roundToInt
 import kotlinx.coroutines.delay
 
 data class LanguageOption(val code: String, val name: String)
@@ -517,8 +522,19 @@ fun TvThresholdRow(
     max: Int = 99,
     modifier: Modifier = Modifier
 ) {
+    // Mobile gets a touch-friendly control: a draggable bar for fine tuning plus
+    // two arrow buttons that jump between the same presets the TV stepper cycles.
+    // Only the TV path keeps the single focusable D-pad stepper.
+    if (isCompactScreen()) {
+        MobileThresholdRow(label, currentValue, onValueChange, min, max, modifier)
+        return
+    }
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "thresholdScale")
+    val scale by animateFloatAsState(
+        targetValue = if (focused) 1.02f else 1f,
+        animationSpec = tween(durationMillis = 120),
+        label = "thresholdScale"
+    )
     val shape = RoundedCornerShape(8.dp)
     val presets = remember(min, max) { THRESHOLD_PRESETS.filter { it in min..max } }
     val fraction = (((currentValue - min).toFloat() / (max - min).toFloat()).coerceIn(0f, 1f))
@@ -617,6 +633,96 @@ fun TvThresholdRow(
             text = "◀ ▶ adjust • OK cycles 75/80/85/90/95",
             color = NetflixLightGray,
             fontSize = 11.sp
+        )
+    }
+}
+
+/**
+ * Mobile counterpart to [TvThresholdRow]: a draggable bar in the middle for
+ * fine tuning, flanked by two arrow buttons that jump between presets, so touch
+ * users get both the coarse presets and any precise value.
+ */
+@Composable
+private fun MobileThresholdRow(
+    label: String,
+    currentValue: Int,
+    onValueChange: (Int) -> Unit,
+    min: Int,
+    max: Int,
+    modifier: Modifier = Modifier
+) {
+    val presets = remember(min, max) { THRESHOLD_PRESETS.filter { it in min..max } }
+    val shape = RoundedCornerShape(8.dp)
+    Column(
+        modifier = modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .background(NetflixCardSurface)
+            .border(1.dp, NetflixBorderHighlight, shape)
+            .padding(horizontal = 16.dp, vertical = 14.dp)
+    ) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                text = label,
+                color = NetflixWhite,
+                fontSize = 15.sp,
+                fontWeight = FontWeight.Bold,
+                modifier = Modifier.weight(1f)
+            )
+            Text(
+                text = "$currentValue%",
+                color = NetflixRed,
+                fontSize = 18.sp,
+                fontWeight = FontWeight.Black
+            )
+        }
+        Spacer(modifier = Modifier.height(4.dp))
+        Row(
+            verticalAlignment = Alignment.CenterVertically,
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            ThresholdArrow(symbol = "◀") {
+                onValueChange(
+                    presets.lastOrNull { it < currentValue } ?: presets.firstOrNull() ?: currentValue
+                )
+            }
+            Slider(
+                value = currentValue.toFloat(),
+                onValueChange = { onValueChange(it.roundToInt().coerceIn(min, max)) },
+                valueRange = min.toFloat()..max.toFloat(),
+                colors = SliderDefaults.colors(
+                    thumbColor = NetflixRed,
+                    activeTrackColor = NetflixRed,
+                    inactiveTrackColor = NetflixLightGray.copy(alpha = 0.3f)
+                ),
+                modifier = Modifier
+                    .weight(1f)
+                    .padding(horizontal = 12.dp)
+            )
+            ThresholdArrow(symbol = "▶") {
+                onValueChange(
+                    presets.firstOrNull { it > currentValue } ?: presets.lastOrNull() ?: currentValue
+                )
+            }
+        }
+    }
+}
+
+@Composable
+private fun ThresholdArrow(symbol: String, onClick: () -> Unit) {
+    Box(
+        modifier = Modifier
+            .size(44.dp)
+            .clip(RoundedCornerShape(8.dp))
+            .background(NetflixDarkSurface)
+            .clickable(onClick = onClick),
+        contentAlignment = Alignment.Center
+    ) {
+        Text(
+            text = symbol,
+            color = NetflixWhite,
+            fontSize = 18.sp,
+            fontWeight = FontWeight.Black
         )
     }
 }
@@ -830,7 +936,7 @@ fun TvToggleRow(
     onToggle: () -> Unit
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.02f else 1f, label = "toggleScale")
+    val scale by animateFloatAsState(if (focused) 1.02f else 1f, animationSpec = tween(durationMillis = 120), label = "toggleScale")
     val shape = RoundedCornerShape(6.dp)
 
     Row(
@@ -879,7 +985,7 @@ fun TvChoiceButton(
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "choiceScale")
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, animationSpec = tween(durationMillis = 120), label = "choiceScale")
     val shape = RoundedCornerShape(6.dp)
 
     Box(
@@ -920,7 +1026,7 @@ fun TvActionButton(
     modifier: Modifier = Modifier
 ) {
     var focused by remember { mutableStateOf(false) }
-    val scale by animateFloatAsState(if (focused) 1.05f else 1f, label = "actionScale")
+    val scale by animateFloatAsState(if (focused) 1.05f else 1f, animationSpec = tween(durationMillis = 120), label = "actionScale")
     val shape = RoundedCornerShape(4.dp)
 
     Box(

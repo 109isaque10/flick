@@ -6,6 +6,7 @@
 package com.stremflix.ui.home
 
 import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -355,9 +356,13 @@ fun HeroSection(
     // D-pad focus to the first focusable in the tree, which is the navigation
     // rail, so the app started with an expanded sidebar instead of Home.
     //
-    // The anchor sits at the top of the hero on purpose: requesting focus on the
-    // Play button made the LazyColumn scroll until the hero's upper half (and
-    // the artwork) left the viewport. OK on the anchor starts playback.
+    // The anchor is a full-width 1dp strip at the hero's BOTTOM, not its top:
+    //   - DOWN from it resolves straight to the first browse row (it sits above
+    //     the rows but below the Play/Info buttons), so one press reaches a card.
+    //   - UP from the first row resolves back to it instead of the buttons, so
+    //     backing out of the rows does not scroll the hero out of view.
+    // Requesting focus on the Play button directly used to scroll the LazyColumn
+    // until the hero's upper half (and the artwork) left the viewport.
     val heroFocusRequester = remember { FocusRequester() }
     LaunchedEffect(Unit) {
         withFrameNanos { }
@@ -371,8 +376,9 @@ fun HeroSection(
     ) {
         Box(
             modifier = Modifier
-                .align(Alignment.TopStart)
-                .size(1.dp)
+                .align(Alignment.BottomStart)
+                .fillMaxWidth()
+                .height(1.dp)
                 .focusRequester(heroFocusRequester)
                 .focusTarget()
                 .onPreviewKeyEvent { event ->
@@ -682,6 +688,9 @@ fun MediaCard(
     var isFocused by remember { mutableStateOf(false) }
     val scaleAnim by animateFloatAsState(
         targetValue = if (isFocused) NetflixDimens.CardFocusScale else 1f,
+        // A short tween instead of the default spring: the spring's ~400ms settle
+        // read as sluggish focus movement on a low-RAM TV box.
+        animationSpec = tween(durationMillis = 120),
         label = "cardScale"
     )
 

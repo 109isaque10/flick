@@ -639,8 +639,15 @@ private fun TvDetailContent(
     val playFocusRequester = remember { FocusRequester() }
     LaunchedEffect(mediaItem.id, showMoreEpisodesView) {
         if (!showMoreEpisodesView) {
-            withFrameNanos { }
-            runCatching { playFocusRequester.requestFocus() }
+            // Retry across frames: the page (and the Play button) is not attached
+            // on the first frame, and a single attempt used to fall through to
+            // whatever focusable the tree supplied, landing on the upper chrome.
+            repeat(4) {
+                withFrameNanos { }
+                if (runCatching { playFocusRequester.requestFocus() }.isSuccess) {
+                    return@LaunchedEffect
+                }
+            }
         }
     }
 
@@ -728,34 +735,40 @@ private fun TvDetailContent(
             )
 
             // Pinned back affordance; the copy column scrolls beneath it.
-            var backFocused by remember { mutableStateOf(false) }
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .statusBarsPadding()
-                    .padding(start = 56.dp, top = 16.dp)
-                    .background(
-                        if (backFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent,
-                        RoundedCornerShape(20.dp)
+            // TV viewers press the remote's Back key, and a visible Back button
+            // here is both redundant and the first focusable in the tree, so the
+            // initial focus used to land on it (and it clipped the title copy).
+            // Keep it only for touch devices.
+            if (isCompactScreen()) {
+                var backFocused by remember { mutableStateOf(false) }
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier
+                        .statusBarsPadding()
+                        .padding(start = 56.dp, top = 16.dp)
+                        .background(
+                            if (backFocused) Color.White.copy(alpha = 0.2f) else Color.Transparent,
+                            RoundedCornerShape(20.dp)
+                        )
+                        .border(if (backFocused) 2.dp else 0.dp, NetflixBorderHighlight, RoundedCornerShape(20.dp))
+                        .onFocusChanged { backFocused = it.isFocused }
+                        .clickable { onBack() }
+                        .padding(horizontal = 10.dp, vertical = 6.dp)
+                ) {
+                    Icon(
+                        Icons.Default.ArrowBack,
+                        contentDescription = stringResource(R.string.action_back),
+                        tint = NetflixWhite,
+                        modifier = Modifier.size(20.dp)
                     )
-                    .border(if (backFocused) 2.dp else 0.dp, NetflixBorderHighlight, RoundedCornerShape(20.dp))
-                    .onFocusChanged { backFocused = it.isFocused }
-                    .clickable { onBack() }
-                    .padding(horizontal = 10.dp, vertical = 6.dp)
-            ) {
-                Icon(
-                    Icons.Default.ArrowBack,
-                    contentDescription = stringResource(R.string.action_back),
-                    tint = NetflixWhite,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(6.dp))
-                Text(
-                    text = stringResource(R.string.action_back),
-                    color = NetflixWhite,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.Bold
-                )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = stringResource(R.string.action_back),
+                        color = NetflixWhite,
+                        fontSize = 13.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
             }
 
             Column(
@@ -781,14 +794,37 @@ private fun TvDetailContent(
 
                 if (mediaItem.overview.isNotBlank()) {
                     Spacer(modifier = Modifier.height(14.dp))
-                    Text(
-                        text = mediaItem.overview,
-                        color = NetflixLightGray,
-                        fontSize = 14.sp,
-                        lineHeight = 21.sp,
-                        maxLines = 5,
-                        overflow = TextOverflow.Ellipsis
-                    )
+                    // The synopsis is truncated to keep the hero compact, but it is
+                    // also focusable: OK on it expands the full text in place, so a
+                    // viewer can read the whole description without leaving the page.
+                    var overviewExpanded by remember(mediaItem.id) { mutableStateOf(false) }
+                    var overviewFocused by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (overviewFocused) NetflixWhite.copy(alpha = 0.12f)
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = if (overviewFocused) 2.dp else 0.dp,
+                                color = if (overviewFocused) NetflixWhite else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .onFocusChanged { overviewFocused = it.isFocused }
+                            .clickable { overviewExpanded = !overviewExpanded }
+                            .padding(8.dp)
+                    ) {
+                        Text(
+                            text = mediaItem.overview,
+                            color = NetflixLightGray,
+                            fontSize = 14.sp,
+                            lineHeight = 21.sp,
+                            maxLines = if (overviewExpanded) Int.MAX_VALUE else 5,
+                            overflow = TextOverflow.Ellipsis
+                        )
+                    }
                 }
 
                 if (mediaItem.cast.isNotEmpty() || mediaItem.director.isNotBlank() ||
