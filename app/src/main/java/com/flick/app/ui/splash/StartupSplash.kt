@@ -54,7 +54,7 @@ fun StartupSplash(
 
     // Check if user provided splash video in res/raw (e.g. R.raw.netflix_splash or R.raw.splash_video)
     val rawResId = remember(context) {
-        val id1 = context.resources.getIdentifier("netflix_splash", "raw", context.packageName)
+        val id1 = context.resources.getIdentifier("flick_splash", "raw", context.packageName)
         if (id1 != 0) id1 else context.resources.getIdentifier("splash_video", "raw", context.packageName)
     }
 

@@ -33,7 +33,7 @@ abstract class FlickDatabase : RoomDatabase() {
                 val instance = Room.databaseBuilder(
                     context.applicationContext,
                     FlickDatabase::class.java,
-                    "stremflix_database"
+                    "flick_database"
                 )
                 .fallbackToDestructiveMigration()
                 .build()

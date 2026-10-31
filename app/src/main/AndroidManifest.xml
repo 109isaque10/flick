@@ -41,7 +41,7 @@
                 <category android:name="android.intent.category.BROWSABLE" />
                 <data
                     android:host="oauth"
-                    android:scheme="stremflix" />
+                    android:scheme="${oauthRedirectScheme}" />
             </intent-filter>
         </activity>
     </application>
