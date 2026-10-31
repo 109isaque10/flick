@@ -22,6 +22,6 @@ dependencyResolutionManagement {
   }
 }
 
-rootProject.name = "StremFlix"
+rootProject.name = "Flick"
 
 include(":app")

@@ -1,5 +1,5 @@
 <resources>
-    <string name="app_name">StremFlix</string>
+    <string name="app_name">Flick</string>
     <string name="app_wordmark">NETFLIX</string>
 
     <!-- Navigation & Bottom/Side Rail -->
@@ -93,7 +93,7 @@
     <string name="installed_addons_count">Installed Addons (%1$d)</string>
     <string name="subtitle_lang_title">Subtitle Language</string>
     <string name="stream_quality_title">Preferred Stream Quality</string>
-    <string name="app_build_info">StremFlix v1.0.0 (Netflix Engine 2020)</string>
+    <string name="app_build_info">Flick v1.0.0 (Netflix Engine 2020)</string>
 
     <!-- Splash Screen -->
     <string name="splash_tagline">UNLIMITED MOVIES &amp; TV SHOWS</string>
@@ -123,7 +123,7 @@
     <string name="badge_new_episodes">New Episodes</string>
     <string name="label_dolby">5.1 Dolby</string>
     <string name="tmdb_key_required_title">TMDB API Key Required</string>
-    <string name="tmdb_key_required_desc">StremFlix is designed for advanced users. Please enter your personal TMDB API key in Settings to load movies, series, and artwork.</string>
+    <string name="tmdb_key_required_desc">Flick is designed for advanced users. Please enter your personal TMDB API key in Settings to load movies, series, and artwork.</string>
     <string name="btn_go_to_settings">Go to Settings</string>
     <string name="loading_seasons">Loading seasons...</string>
     <string name="episodes_count_format">%1$d episodes</string>

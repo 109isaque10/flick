@@ -13,11 +13,11 @@ kotlin {
 }
 
 android {
-  namespace = "com.stremflix"
+  namespace = "com.flick.app"
   compileSdk = 35
 
   defaultConfig {
-    applicationId = "com.stremflix"
+    applicationId = "com.flick.app"
     minSdk = 27
     targetSdk = 35
     versionCode = (findProperty("versionCode") as String?)?.toIntOrNull() ?: 1
@@ -25,7 +25,7 @@ android {
 
     testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
     
-    manifestPlaceholders["oauthRedirectScheme"] = "stremflix"
+    manifestPlaceholders["oauthRedirectScheme"] = "flick"
   }
 
   signingConfigs {
@@ -55,7 +55,8 @@ android {
   buildTypes {
     release {
       isCrunchPngs = false
-      isMinifyEnabled = false
+      isMinifyEnabled = true
+      isShrinkResources = true
       proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro")
       signingConfig = signingConfigs.findByName("release")
     }
