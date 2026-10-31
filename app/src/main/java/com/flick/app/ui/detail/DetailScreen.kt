@@ -9,6 +9,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -1290,7 +1291,11 @@ fun TvEpisodesView(
 
                 LazyColumn(
                     state = seasonListState,
-                    modifier = Modifier.weight(1f).focusRestorer(),
+                    // Mirror of the rail: the group's restorer is pinned to the
+                    // season being watched, so focus lands there on entry with no
+                    // intermediate jump. The scroll below is still needed because
+                    // that row may be outside the lazily composed window.
+                    modifier = Modifier.weight(1f).focusGroup().focusRestorer(selectedSeasonRequester),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(seasons, key = { it.seasonNumber }) { season ->

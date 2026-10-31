@@ -1,6 +1,7 @@
 package com.flick.app.ui.settings
 
 import android.view.KeyEvent
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.background
@@ -8,6 +9,7 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
@@ -179,11 +181,29 @@ fun SettingsScreen(
     val firstControlModifier: Modifier =
         if (isMobile) Modifier else Modifier.focusRequester(firstControl)
 
-    LaunchedEffect(category, isMobile) {
+    // A3: on TV the app follows Android TV Settings. Back from the pane body
+    // returns focus to the category list rather than leaving the screen, because
+    // some panes have no control to the left to travel out of. The requester is
+    // attached to the *selected* row, so Back lands on the category the viewer
+    // came from. `focusedCategory` records whether focus is already in that
+    // column; Back is only consumed while it is not, so a second Back still
+    // leaves Settings through the host handler.
+    val categoryColumnRequester = remember { FocusRequester() }
+    var focusedCategory by remember { mutableStateOf<SettingsCategory?>(null) }
+    // Selecting the already-selected category is not a state change, so the focus
+    // effect below would not re-run. After Back parked focus in the category list,
+    // Enter on that same row must still enter the pane.
+    var bodyFocusTick by remember { mutableStateOf(0) }
+
+    LaunchedEffect(category, isMobile, bodyFocusTick) {
         if (!isMobile) {
             withFrameNanos { }
             runCatching { firstControl.requestFocus() }
         }
+    }
+
+    BackHandler(enabled = !isMobile && focusedCategory == null) {
+        runCatching { categoryColumnRequester.requestFocus() }
     }
 
     // The pane body closes over every parameter, so it can be shared by the TV
@@ -433,7 +453,11 @@ fun SettingsScreen(
                 modifier = Modifier
                     .width(240.dp)
                     .fillMaxHeight()
-                    .focusRestorer()
+                    // Entering the category column from the pane body resolves the
+                    // selected category as the group is entered, instead of the
+                    // row geometrically closest to the control the viewer left.
+                    .focusGroup()
+                    .focusRestorer(categoryColumnRequester)
             ) {
                 Text(
                     text = stringResource(R.string.settings_title),
@@ -446,7 +470,26 @@ fun SettingsScreen(
                     CategoryItem(
                         label = c.label,
                         selected = category == c,
-                        onClick = { category = c }
+                        onClick = {
+                            category = c
+                            bodyFocusTick++
+                        },
+                        // Only the selected row carries the Back target (A3).
+                        modifier = if (category == c) {
+                            Modifier.focusRequester(categoryColumnRequester)
+                        } else {
+                            Modifier
+                        },
+                        // Cleared only when the row that currently owns the
+                        // recorded focus loses it, so gain/loss callback order
+                        // cannot leave a stale value behind.
+                        onFocusChanged = { hasFocus ->
+                            if (hasFocus) {
+                                focusedCategory = c
+                            } else if (focusedCategory == c) {
+                                focusedCategory = null
+                            }
+                        }
                     )
                     Spacer(modifier = Modifier.height(8.dp))
                 }
@@ -461,12 +504,14 @@ fun SettingsScreen(
 private fun CategoryItem(
     label: String,
     selected: Boolean,
-    onClick: () -> Unit
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier,
+    onFocusChanged: (Boolean) -> Unit = {}
 ) {
     var focused by remember { mutableStateOf(false) }
     val shape = RoundedCornerShape(6.dp)
     Row(
-        modifier = Modifier
+        modifier = modifier
             .fillMaxWidth()
             .height(NetflixDimens.RailItemHeight)
             .clip(shape)
@@ -482,7 +527,10 @@ private fun CategoryItem(
                 color = if (focused) NetflixWhite else Color.Transparent,
                 shape = shape
             )
-            .onFocusChanged { focused = it.isFocused }
+            .onFocusChanged {
+                focused = it.isFocused
+                onFocusChanged(it.isFocused)
+            }
             .clickable { onClick() }
             .padding(horizontal = 12.dp),
         verticalAlignment = Alignment.CenterVertically

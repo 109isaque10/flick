@@ -57,7 +57,8 @@ fun TvSeekBar(
     modifier: Modifier = Modifier,
     onSeekTo: (Long) -> Unit,
     onTogglePlayPause: () -> Unit,
-    formatTime: (Long) -> String
+    formatTime: (Long) -> String,
+    onInteraction: () -> Unit = {}
 ) {
     val safeDuration = durationMs.coerceAtLeast(1L)
 
@@ -67,6 +68,7 @@ fun TvSeekBar(
             safeDuration = safeDuration,
             modifier = modifier,
             onSeekTo = onSeekTo,
+            onInteraction = onInteraction,
             formatTime = formatTime
         )
     } else {
@@ -76,6 +78,7 @@ fun TvSeekBar(
             modifier = modifier,
             onSeekTo = onSeekTo,
             onTogglePlayPause = onTogglePlayPause,
+            onInteraction = onInteraction,
             formatTime = formatTime
         )
     }
@@ -88,6 +91,7 @@ private fun MobileSeekBar(
     safeDuration: Long,
     modifier: Modifier,
     onSeekTo: (Long) -> Unit,
+    onInteraction: () -> Unit,
     formatTime: (Long) -> String
 ) {
     var previewMs by remember { mutableStateOf<Long?>(null) }
@@ -104,7 +108,10 @@ private fun MobileSeekBar(
         SeekTimeRow(positionMs = shownMs, durationMs = safeDuration, formatTime = formatTime)
         Slider(
             value = (shownMs.toFloat() / safeDuration.toFloat()).coerceIn(0f, 1f),
-            onValueChange = { previewMs = (it * safeDuration).toLong() },
+            onValueChange = {
+                onInteraction()
+                previewMs = (it * safeDuration).toLong()
+            },
             onValueChangeFinished = {
                 previewMs?.let(onSeekTo)
                 previewMs = null
@@ -132,6 +139,7 @@ private fun TvDpadSeekBar(
     modifier: Modifier,
     onSeekTo: (Long) -> Unit,
     onTogglePlayPause: () -> Unit,
+    onInteraction: () -> Unit,
     formatTime: (Long) -> String
 ) {
     var focused by remember { mutableStateOf(false) }
@@ -161,16 +169,19 @@ private fun TvDpadSeekBar(
                 if (event.type != KeyEventType.KeyDown) return@onKeyEvent false
                 when (event.key) {
                     Key.DirectionLeft -> {
+                        onInteraction()
                         previewMs = (shownMs - SEEK_STEP_MS).coerceIn(0L, safeDuration)
                         true
                     }
 
                     Key.DirectionRight -> {
+                        onInteraction()
                         previewMs = (shownMs + SEEK_STEP_MS).coerceIn(0L, safeDuration)
                         true
                     }
 
                     Key.DirectionCenter, Key.Enter, Key.NumPadEnter -> {
+                        onInteraction()
                         onTogglePlayPause()
                         true
                     }

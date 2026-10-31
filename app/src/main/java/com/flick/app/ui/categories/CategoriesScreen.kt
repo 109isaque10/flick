@@ -3,6 +3,7 @@ package com.flick.app.ui.categories
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -20,6 +21,7 @@ import androidx.compose.foundation.layout.statusBarsPadding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -29,12 +31,17 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -158,6 +165,19 @@ fun CategoriesScreen(
         }
     } else {
         // TV 2-Pane Layout
+        val genreListState = rememberLazyListState()
+        val selectedGenreRequester = remember { FocusRequester() }
+        // Land on the genre that is already selected so the screen always has a
+        // focusable entry point (A4) and opening it never jumps (F1). This is the
+        // same mechanism the details screen uses for its season list.
+        LaunchedEffect(selectedGenre?.id, genres) {
+            val index = genres.indexOfFirst { it.id == selectedGenre?.id }
+            if (index >= 0) {
+                runCatching { genreListState.scrollToItem(index) }
+                withFrameNanos { }
+                runCatching { selectedGenreRequester.requestFocus() }
+            }
+        }
         Row(
             modifier = modifier
                 .fillMaxSize()
@@ -179,7 +199,14 @@ fun CategoriesScreen(
                 )
 
                 LazyColumn(
-                    modifier = Modifier.fillMaxSize(),
+                    state = genreListState,
+                    // Entering the genre column resolves the selected genre as the
+                    // group is entered, so the nearest row is never focused first
+                    // and nothing hops to the selection afterwards.
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .focusGroup()
+                        .focusRestorer(selectedGenreRequester),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(genres, key = { it.id }) { genre ->
@@ -201,6 +228,13 @@ fun CategoriesScreen(
                                     shape = RoundedCornerShape(NetflixDimens.CardRadius)
                                 )
                                 .onFocusChanged { isFocused = it.isFocused }
+                                .then(
+                                    if (isSelected) {
+                                        Modifier.focusRequester(selectedGenreRequester)
+                                    } else {
+                                        Modifier
+                                    }
+                                )
                                 .clickable { onGenreSelected(genre) }
                                 .padding(horizontal = 12.dp)
                         ) {

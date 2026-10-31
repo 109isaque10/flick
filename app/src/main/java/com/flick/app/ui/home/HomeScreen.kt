@@ -7,6 +7,7 @@ package com.flick.app.ui.home
 
 import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -59,6 +60,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
@@ -375,15 +377,18 @@ fun HeroSection(
     val heroFocusRequester = remember { FocusRequester() }
     val overviewFocusRequester = remember { FocusRequester() }
     val hasOverview = item.overview.isNotBlank()
+    // Land on the synopsis when the item has one: focusing it is what reveals the
+    // full billboard, so defaulting to Play left the full hero view hidden on
+    // load (D1). Play stays the default when there is no synopsis. Retry across
+    // frames because the hero is not attached on the first composition, and check
+    // the boolean requestFocus() returns: it reports false without throwing while
+    // the node is not ready, so runCatching's flag alone quits too early and
+    // leaves focus on whatever the tree supplied first.
     LaunchedEffect(Unit) {
-        // Land on Play with the billboard in frame. Retry across frames because
-        // the hero is not attached on the first composition, and check the
-        // boolean that requestFocus() returns: it reports false without throwing
-        // while the node is not ready, so runCatching's flag alone quits too early
-        // and leaves focus on whatever the tree supplied first.
+        val initialFocus = if (hasOverview) overviewFocusRequester else heroFocusRequester
         repeat(6) {
             withFrameNanos { }
-            if (runCatching { heroFocusRequester.requestFocus() }.getOrDefault(false)) {
+            if (runCatching { initialFocus.requestFocus() }.getOrDefault(false)) {
                 return@LaunchedEffect
             }
         }
@@ -440,11 +445,10 @@ fun HeroSection(
         ) {
             // "N SERIES" eyebrow, exactly where Netflix puts it: above the logo.
             Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = "N",
-                    color = NetflixRed,
-                    fontSize = 20.sp,
-                    fontWeight = FontWeight.Black
+                Image(
+                    painter = painterResource(R.drawable.logo_flick),
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp)
                 )
                 Spacer(modifier = Modifier.width(6.dp))
                 Text(
@@ -710,6 +714,9 @@ fun ContentRowSection(
                 MediaCard(
                     item = item,
                     onClick = { onMediaSelected(item) },
+                    // Reserve the focus-scale overflow so a focused card never
+                    // forces the parent list to re-scroll (vertical jitter).
+                    modifier = Modifier.padding(vertical = NetflixDimens.CardFocusOverflow),
                     cardWidth = cardWidth,
                     rank = if (spotlightType == SpotlightType.TOP_250) index + 1 else null,
                     originalBadge = spotlightType == SpotlightType.N_SERIES
@@ -761,7 +768,9 @@ fun MediaCard(
             contentScale = ContentScale.Crop
         )
 
-        if (rank != null || originalBadge) {
+        // Contrast gradient only where there is bottom text to keep legible (the
+        // rank). Items that only carry the top badge do not need it (H1).
+        if (rank != null) {
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -778,14 +787,13 @@ fun MediaCard(
         }
 
         if (originalBadge) {
-            Text(
-                text = "N",
-                color = NetflixRed,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Black,
+            Image(
+                painter = painterResource(R.drawable.logo_flick),
+                contentDescription = stringResource(R.string.label_series),
                 modifier = Modifier
                     .align(Alignment.TopStart)
                     .padding(start = 6.dp, top = 4.dp)
+                    .size(16.dp)
             )
         }
 

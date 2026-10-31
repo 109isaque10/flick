@@ -158,7 +158,6 @@ fun PlayerScreen(
     completionThreshold: Int = 90,
     modifier: Modifier = Modifier
 ) {
-    BackHandler(onBack = onBack)
     val context = LocalContext.current
     val activity = (context as? Activity)
     val lifecycleOwner = LocalLifecycleOwner.current
@@ -231,6 +230,24 @@ fun PlayerScreen(
     var playerError by remember { mutableStateOf<String?>(null) }
     var reloadKey by remember { mutableStateOf(0) }
 
+    // Back unwinds one overlay level at a time instead of always closing the
+    // player (B1): the in-player surfaces consume the event before it reaches
+    // player dismissal, and only a bare player root closes it.
+    BackHandler {
+        when {
+            showEpisodesDrawer -> showEpisodesDrawer = false
+            showAudioSubtitlesDialog -> showAudioSubtitlesDialog = false
+            showSpeedMenu -> showSpeedMenu = false
+            showUpNextPopup -> {
+                showUpNextPopup = false
+                userDismissedUpNext = true
+            }
+
+            isControlsVisible -> isControlsVisible = false
+            else -> onBack()
+        }
+    }
+
     // Reset playback and popup state when streamUrl or episode changes
     LaunchedEffect(streamUrl, currentEpisodeNumber, currentSeasonNumber) {
         prefetchFired = false
@@ -244,6 +261,9 @@ fun PlayerScreen(
         autoAdvanceHandled = false
         lastProgressSave = 0L
         playerError = null
+        // Reuse the initial-load path: a new episode must show the loading state
+        // instead of silently swapping media behind a reused player (G2).
+        isBuffering = true
     }
 
     // Initialize ExoPlayer with HTTP Data Source & cross protocol redirects
@@ -525,9 +545,18 @@ fun PlayerScreen(
                             onPrefetchTriggered()
                         }
 
-                        // Show Up Next Popup at upNextThreshold or when < 35s remaining
-                        if ((progressPct >= upNextThreshold.toFloat() || remainingMs <= 35000L) && !showUpNextPopup && !userDismissedUpNext && hasNext) {
+                        // Up Next is derived from the playback position, never a
+                        // parallel clock: the countdown is the real time left,
+                        // pausing freezes it, seeking updates it, and seeking back
+                        // above the trigger (or the media ending) dismisses it (G1).
+                        val upNextTriggered =
+                            progressPct >= upNextThreshold.toFloat() || remainingMs <= 35000L
+                        if (upNextTriggered && !userDismissedUpNext && hasNext) {
+                            upNextCountdown =
+                                ((remainingMs + 999L) / 1000L).toInt().coerceAtLeast(0)
                             showUpNextPopup = true
+                        } else if (showUpNextPopup) {
+                            showUpNextPopup = false
                         }
                     }
                 } else if (playerPos >= 0L) {
@@ -541,20 +570,9 @@ fun PlayerScreen(
         }
     }
 
-    // Up Next Countdown Timer - Defaults to playing next episode automatically
-    LaunchedEffect(showUpNextPopup) {
-        if (showUpNextPopup) {
-            upNextCountdown = 20
-            while (upNextCountdown > 0) {
-                delay(1000)
-                upNextCountdown--
-            }
-            showUpNextPopup = false
-            // Hand off to the single advance path below so the countdown and
-            // end-of-media cannot both start the next episode.
-            if (!autoAdvanceHandled) reachedEnd = true
-        }
-    }
+    // Up Next visibility and its countdown are derived from the playback
+    // position inside the periodic loop above, so there is no standalone timer
+    // to keep in sync (G1). The episode advances when the media actually ends.
 
     // Single advance path: resolves the next episode with fresh parameters and
     // advances at most once per episode.
@@ -619,7 +637,10 @@ fun PlayerScreen(
                         AndroidKeyEvent.KEYCODE_DPAD_DOWN,
                         AndroidKeyEvent.KEYCODE_DPAD_LEFT,
                         AndroidKeyEvent.KEYCODE_DPAD_RIGHT -> {
-                            if (!isControlsVisible) {
+                            // While the Up Next card is up, directional input
+                            // belongs to that card, so it must not reveal the
+                            // player overlay (B3).
+                            if (!isControlsVisible && !showUpNextPopup) {
                                 isControlsVisible = true
                                 true
                             } else false
@@ -991,6 +1012,10 @@ fun PlayerScreen(
                             exoPlayer?.let { if (it.isPlaying) it.pause() else it.play() }
                             lastInteractionTime = System.currentTimeMillis()
                         },
+                        // Held direction keys are consumed by the bar, so reset
+                        // the auto-hide timer from inside it or the overlay hides
+                        // mid-scrub and drops focus (B2).
+                        onInteraction = { lastInteractionTime = System.currentTimeMillis() },
                         formatTime = ::formatTime
                     )
 

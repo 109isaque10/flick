@@ -6,9 +6,13 @@ import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
 import androidx.compose.foundation.layout.fillMaxSize
 
+import androidx.compose.animation.core.animateDpAsState
+import androidx.compose.animation.core.tween
+import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -53,9 +57,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -64,6 +70,7 @@ import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
@@ -201,11 +208,16 @@ fun FlickNavRail(
         railReady = true
     }
     val isRailFocused = railHasFocus && railEngaged
-    // Snap instead of animating: every animation frame remeasured the whole
-    // screen subtree (every poster row), which is what made the sidebar take
-    // seconds to unfurl on a TV box.
-    val railWidth =
-        if (isRailFocused) NetflixDimens.RailWidthExpanded else NetflixDimens.RailWidthCollapsed
+    // Animated again: the "seconds to unfurl" was a debug-build artifact (the
+    // release build is ~7x smaller), so the transition is restored. The content
+    // sibling is inset by a constant padding, so animating the rail width only
+    // re-measures the rail itself, not the poster rows.
+    val railWidth by animateDpAsState(
+        targetValue = if (isRailFocused) NetflixDimens.RailWidthExpanded
+        else NetflixDimens.RailWidthCollapsed,
+        animationSpec = tween(durationMillis = 180),
+        label = "railWidth"
+    )
     val context = LocalContext.current
 
     val destinations = remember {
@@ -230,7 +242,12 @@ fun FlickNavRail(
     val selectedIndex = destinations.indexOf(currentDestination).let {
         if (it >= 0) it else if (currentDestination == NavDestination.SETTINGS) destinations.size else 0
     }
-    LaunchedEffect(railEngaged) {
+    // The rail container is a focusGroup with a focusRestorer pinned to the
+    // current section, so entering it resolves the selected item as the group is
+    // entered: the nearest item is never focused first and nothing hops
+    // afterwards. The effect below is only a defensive fallback for the case
+    // where the restorer has no saved focus to give back.
+    LaunchedEffect(railEngaged, selectedIndex) {
         if (railEngaged) {
             val target = focusRequesters[selectedIndex]
             repeat(3) {
@@ -245,8 +262,14 @@ fun FlickNavRail(
     Box(
         modifier = modifier
             .width(railWidth)
+            .clipToBounds()
             .fillMaxHeight()
             .statusBarsPadding()
+            // Entering the rail lands on the section that is currently open
+            // instead of the item geometrically closest to the content, which
+            // used to focus the wrong row first and then jump to the selection.
+            .focusGroup()
+            .focusRestorer(focusRequesters[selectedIndex])
             .onFocusChanged { state ->
                 if (state.hasFocus && !railHasFocus) {
                     // Expand as soon as the viewer deliberately navigates into the
@@ -290,12 +313,12 @@ fun FlickNavRail(
                         .fillMaxWidth()
                         .padding(horizontal = 4.dp, vertical = 8.dp)
                 ) {
-                    Text(
-                        text = "N",
-                        color = NetflixRed,
-                        fontSize = 26.sp,
-                        fontWeight = FontWeight.Black,
-                        modifier = Modifier.padding(horizontal = 4.dp)
+                    Image(
+                        painter = painterResource(R.drawable.logo_flick),
+                        contentDescription = null,
+                        modifier = Modifier
+                            .padding(horizontal = 4.dp)
+                            .size(26.dp)
                     )
                     if (isRailFocused) {
                         Spacer(modifier = Modifier.width(12.dp))

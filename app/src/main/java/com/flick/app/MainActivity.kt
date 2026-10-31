@@ -1,3 +1,5 @@
+@file:OptIn(androidx.compose.ui.ExperimentalComposeUiApi::class)
+
 package com.flick.app
 
 import android.content.Intent
@@ -9,9 +11,8 @@ import androidx.activity.compose.BackHandler
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.compose.animation.Crossfade
-import androidx.compose.foundation.clickable
-import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.background
+import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -27,9 +28,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
+import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.platform.LocalContext
 import com.flick.app.data.local.SettingsDataStore
 import com.flick.app.data.local.FlickDatabase
@@ -204,7 +207,6 @@ fun MainAppContent(
     // Landing target for D-pad focus after a sidebar selection, so the rail
     // collapses instead of staying open over the screen.
     val contentFocusRequester = remember { FocusRequester() }
-    val contentInteractionSource = remember { MutableInteractionSource() }
 
     // Categories Data
     val sampleGenres = remember {
@@ -704,7 +706,12 @@ fun MainAppContent(
                     NavDestination.HOME -> {
                         HomeScreen(
                             contentRows = contentRows,
-                            heroItem = heroItem,
+                            // Fall back to the first available row item so a cold
+                            // start always renders a hero (and therefore a
+                            // focusable Home) even if the richer details fetch
+                            // never resolves.
+                            heroItem = heroItem
+                                ?: contentRows.firstOrNull { it.items.isNotEmpty() }?.items?.firstOrNull(),
                             onMediaSelected = { selectedMediaItem = it },
                             onPlayClicked = { item -> playMediaStream(item) },
                             isTmdbKeyConfigured = tmdbApiKey.isNotBlank(),
@@ -911,21 +918,41 @@ fun MainAppContent(
                         modifier = Modifier
                             .fillMaxSize()
                             .padding(start = NetflixDimens.RailWidthCollapsed)
+                            // A focus container, not a focusable node. It used to be
+                            // a full-screen no-op `clickable`, which made the whole
+                            // content area a single invisible focus target: DOWN on
+                            // the last row landed on it, and the screen then read as
+                            // unfocusable after a rail selection. Requesting focus
+                            // here now enters the screen and restores the control
+                            // the viewer left from.
                             .focusRequester(contentFocusRequester)
-                            .clickable(
-                                interactionSource = contentInteractionSource,
-                                indication = null
-                            ) { }
+                            .focusGroup()
+                            .focusRestorer()
                     ) {
                         screenContent()
                     }
                     FlickNavRail(
                         currentDestination = currentNavDestination,
                         onDestinationSelected = { dest ->
+                            val reselectingCurrentScreen = dest == currentNavDestination
                             currentNavDestination = dest
-                            // Pull focus out of the rail so the sidebar collapses
-                            // and the selected screen becomes the D-pad surface.
-                            runCatching { contentFocusRequester.requestFocus() }
+                            if (reselectingCurrentScreen) {
+                                // Re-selecting the current section must pull focus
+                                // back out of the rail so it collapses and the
+                                // previous control regains focus. Switching to a
+                                // different section is left to that screen, which
+                                // focuses its own default on mount.
+                                coroutineScope.launch {
+                                    repeat(4) {
+                                        withFrameNanos { }
+                                        if (runCatching { contentFocusRequester.requestFocus() }
+                                                .getOrDefault(false)
+                                        ) {
+                                            return@launch
+                                        }
+                                    }
+                                }
+                            }
                         }
                     )
                 }

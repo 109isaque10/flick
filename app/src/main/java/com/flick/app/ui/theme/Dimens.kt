@@ -14,6 +14,9 @@ object NetflixDimens {
     val CardRadius = 4.dp
     val CardFocusBorder = 3.dp
     val CardFocusScale = 1.05f
+    // Vertical room reserved around each card for the focus scale, so gaining
+    // focus never changes the row height (which made the list jitter).
+    val CardFocusOverflow = 8.dp
     val PosterWidth = 135.dp
     val PosterWidthMobile = 132.dp
     val PosterWidthTv = 168.dp
