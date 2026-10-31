@@ -73,6 +73,7 @@ import com.flick.app.R
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.theme.NetflixDarkSurface
 import com.flick.app.ui.theme.NetflixDimens
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.theme.NetflixLightGray
 import com.flick.app.ui.theme.NetflixRed
 import com.flick.app.ui.theme.NetflixWhite
@@ -122,7 +123,8 @@ private fun RailItem(
         modifier = modifier
             .fillMaxWidth()
             .height(NetflixDimens.RailItemHeight)
-            .padding(vertical = 2.dp),
+            .padding(vertical = 2.dp)
+            .touchClickable { onClick() },
         shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
         colors = ClickableSurfaceDefaults.colors(
             containerColor = if (selected) NetflixDarkSurface else Color.Transparent,
@@ -359,11 +361,12 @@ fun FlickNavRail(
                 val reloadFocused by reloadInteraction.collectIsFocusedAsState()
                 val reloadContentColor = if (reloadFocused) NetflixBlack else NetflixLightGray
 
+                val reloadAction: () -> Unit = {
+                    onReloadRequested()
+                    (context as? Activity)?.recreate()
+                }
                 Surface(
-                    onClick = {
-                        onReloadRequested()
-                        (context as? Activity)?.recreate()
-                    },
+                    onClick = reloadAction,
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(NetflixDimens.RailItemHeight)
@@ -372,7 +375,8 @@ fun FlickNavRail(
                         .focusProperties {
                             up = focusRequesters[destinations.size]
                             down = FocusRequester.Cancel
-                        },
+                        }
+                        .touchClickable(onClick = reloadAction),
                     shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
                     colors = ClickableSurfaceDefaults.colors(
                         containerColor = Color.Transparent,

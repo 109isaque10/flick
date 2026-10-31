@@ -120,6 +120,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import coil.compose.AsyncImage
 import com.flick.app.R
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.data.model.EpisodeModel
 import com.flick.app.data.model.SeasonModel
 import com.flick.app.ui.theme.NetflixBlack
@@ -696,18 +697,20 @@ fun PlayerScreen(
                     )
                     Spacer(modifier = Modifier.height(20.dp))
                     Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        val retry: () -> Unit = {
+                            playerError = null
+                            reloadKey++
+                        }
                         Button(
-                            onClick = {
-                                playerError = null
-                                reloadKey++
-                            },
+                            onClick = retry,
                             colors = ButtonDefaults.colors(
                                 containerColor = NetflixWhite,
                                 contentColor = NetflixBlack,
                                 focusedContainerColor = NetflixWhite,
                                 focusedContentColor = NetflixBlack
                             ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                            modifier = Modifier.touchClickable(onClick = retry)
                         ) {
                             Text(
                                 text = stringResource(R.string.action_retry),
@@ -723,7 +726,8 @@ fun PlayerScreen(
                                 focusedContainerColor = NetflixRed,
                                 focusedContentColor = NetflixWhite
                             ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                            shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                            modifier = Modifier.touchClickable { onBack() }
                         ) {
                             Text(
                                 text = stringResource(R.string.action_back),
@@ -795,11 +799,12 @@ fun PlayerScreen(
                         modifier = Modifier.weight(1f)
                     ) {
                         var backFocused by remember { mutableStateOf(false) }
+                        val backAction: () -> Unit = {
+                            lastInteractionTime = System.currentTimeMillis()
+                            onBack()
+                        }
                         IconButton(
-                            onClick = {
-                                lastInteractionTime = System.currentTimeMillis()
-                                onBack()
-                            },
+                            onClick = backAction,
                             modifier = Modifier
                                 .background(
                                     if (backFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
@@ -810,6 +815,7 @@ fun PlayerScreen(
                                     backFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                     System.currentTimeMillis()
                                 }
+                                .touchClickable(onClick = backAction)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.ArrowBack,
@@ -832,11 +838,12 @@ fun PlayerScreen(
                     }
 
                     var castFocused by remember { mutableStateOf(false) }
+                    val castAction: () -> Unit = {
+                        lastInteractionTime = System.currentTimeMillis()
+                        /* Cast trigger */
+                    }
                     IconButton(
-                        onClick = {
-                            lastInteractionTime = System.currentTimeMillis()
-                            /* Cast trigger */
-                        },
+                        onClick = castAction,
                         modifier = Modifier
                             .background(
                                 if (castFocused) Color.White.copy(alpha = 0.25f) else Color.Transparent,
@@ -847,6 +854,7 @@ fun PlayerScreen(
                                 castFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                 System.currentTimeMillis()
                             }
+                            .touchClickable(onClick = castAction)
                     ) {
                         Icon(
                             imageVector = Icons.Default.Cast,
@@ -868,11 +876,12 @@ fun PlayerScreen(
                         verticalAlignment = Alignment.CenterVertically
                     ) {
                         var rewFocused by remember { mutableStateOf(false) }
+                        val rewindAction: () -> Unit = {
+                            exoPlayer?.seekTo((currentPosition - 10000).coerceAtLeast(0L))
+                            lastInteractionTime = System.currentTimeMillis()
+                        }
                         IconButton(
-                            onClick = {
-                                exoPlayer?.seekTo((currentPosition - 10000).coerceAtLeast(0L))
-                                lastInteractionTime = System.currentTimeMillis()
-                            },
+                            onClick = rewindAction,
                             modifier = Modifier
                                 .size(56.dp)
                                 .background(
@@ -884,6 +893,7 @@ fun PlayerScreen(
                                     rewFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                     System.currentTimeMillis()
                                 }
+                                .touchClickable(onClick = rewindAction)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Replay10,
@@ -931,11 +941,12 @@ fun PlayerScreen(
                         }
 
                         var fwdFocused by remember { mutableStateOf(false) }
+                        val forwardAction: () -> Unit = {
+                            exoPlayer?.seekTo((currentPosition + 10000).coerceAtMost(duration))
+                            lastInteractionTime = System.currentTimeMillis()
+                        }
                         IconButton(
-                            onClick = {
-                                exoPlayer?.seekTo((currentPosition + 10000).coerceAtMost(duration))
-                                lastInteractionTime = System.currentTimeMillis()
-                            },
+                            onClick = forwardAction,
                             modifier = Modifier
                                 .size(56.dp)
                                 .background(
@@ -947,6 +958,7 @@ fun PlayerScreen(
                                     fwdFocused = it.isFocused; if (it.isFocused) lastInteractionTime =
                                     System.currentTimeMillis()
                                 }
+                                .touchClickable(onClick = forwardAction)
                         ) {
                             Icon(
                                 imageVector = Icons.Default.Forward10,
@@ -1207,7 +1219,9 @@ fun PlayerScreen(
                             )
                             IconButton(
                                 onClick = { showEpisodesDrawer = false },
-                                modifier = Modifier.size(32.dp)
+                                modifier = Modifier
+                                    .size(32.dp)
+                                    .touchClickable { showEpisodesDrawer = false }
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -1539,12 +1553,15 @@ fun PlayerScreen(
                                     overflow = TextOverflow.Ellipsis,
                                     modifier = Modifier.weight(1f)
                                 )
+                                val dismissUpNext: () -> Unit = {
+                                    showUpNextPopup = false
+                                    userDismissedUpNext = true
+                                }
                                 IconButton(
-                                    onClick = {
-                                        showUpNextPopup = false
-                                        userDismissedUpNext = true
-                                    },
-                                    modifier = Modifier.size(18.dp)
+                                    onClick = dismissUpNext,
+                                    modifier = Modifier
+                                        .size(18.dp)
+                                        .touchClickable(onClick = dismissUpNext)
                                 ) {
                                     Icon(
                                         imageVector = Icons.Default.Close,
@@ -1618,12 +1635,15 @@ fun PlayerScreen(
                                 )
                             }
 
+                            val dismissUpNext: () -> Unit = {
+                                showUpNextPopup = false
+                                userDismissedUpNext = true
+                            }
                             IconButton(
-                                onClick = {
-                                    showUpNextPopup = false
-                                    userDismissedUpNext = true
-                                },
-                                modifier = Modifier.size(24.dp)
+                                onClick = dismissUpNext,
+                                modifier = Modifier
+                                    .size(24.dp)
+                                    .touchClickable(onClick = dismissUpNext)
                             ) {
                                 Icon(
                                     imageVector = Icons.Default.Close,
@@ -1963,7 +1983,8 @@ fun AudioSubtitlesSelectionDialog(
                             focusedContainerColor = NetflixRed,
                             focusedContentColor = NetflixWhite
                         ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                        modifier = Modifier.touchClickable { onDismiss() }
                     ) {
                         Text(
                             text = stringResource(R.string.action_cancel),
@@ -1981,7 +2002,8 @@ fun AudioSubtitlesSelectionDialog(
                             focusedContainerColor = NetflixRed,
                             focusedContentColor = NetflixWhite
                         ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                        modifier = Modifier.touchClickable { onApply(tempAudio, tempSubtitle) }
                     ) {
                         Text(
                             text = stringResource(R.string.action_apply),

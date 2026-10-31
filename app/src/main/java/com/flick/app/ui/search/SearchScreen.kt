@@ -65,6 +65,7 @@ import com.flick.app.R
 import com.flick.app.data.model.MediaItem
 import com.flick.app.ui.home.PosterCard
 import com.flick.app.ui.theme.NetflixBlack
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.theme.NetflixBorderHighlight
 import com.flick.app.ui.theme.NetflixCardSurface
 import com.flick.app.ui.theme.NetflixDarkSurface
@@ -166,7 +167,10 @@ fun SearchScreen(
                 )
 
                 if (searchQuery.isNotEmpty()) {
-                    IconButton(onClick = { onQueryChange("") }) {
+                    IconButton(
+                        onClick = { onQueryChange("") },
+                        modifier = Modifier.touchClickable { onQueryChange("") }
+                    ) {
                         Icon(
                             imageVector = Icons.Default.Clear,
                             contentDescription = "Clear",
@@ -387,6 +391,7 @@ fun SearchScreen(
                         modifier = Modifier
                             .weight(1.2f)
                             .height(38.dp)
+                            .touchClickable { onQueryChange("$searchQuery ") }
                     ) {
                         Text(
                             text = stringResource(R.string.search_space),
@@ -395,12 +400,13 @@ fun SearchScreen(
                         )
                     }
 
+                    val backspace: () -> Unit = {
+                        if (searchQuery.isNotEmpty()) {
+                            onQueryChange(searchQuery.dropLast(1))
+                        }
+                    }
                     Button(
-                        onClick = {
-                            if (searchQuery.isNotEmpty()) {
-                                onQueryChange(searchQuery.dropLast(1))
-                            }
-                        },
+                        onClick = backspace,
                         colors = ButtonDefaults.colors(
                             containerColor = NetflixDarkSurface,
                             contentColor = NetflixWhite,
@@ -411,6 +417,7 @@ fun SearchScreen(
                         modifier = Modifier
                             .weight(1.2f)
                             .height(38.dp)
+                            .touchClickable(onClick = backspace)
                     ) {
                         Icon(Icons.Default.Backspace, contentDescription = "Backspace", modifier = Modifier.size(16.dp))
                     }
@@ -427,6 +434,7 @@ fun SearchScreen(
                         modifier = Modifier
                             .weight(1f)
                             .height(38.dp)
+                            .touchClickable { onQueryChange("") }
                     ) {
                         Text(
                             text = stringResource(R.string.search_clear),

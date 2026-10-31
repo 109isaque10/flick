@@ -68,6 +68,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
 import com.flick.app.R
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.data.model.ContentRow
 import com.flick.app.data.model.MediaItem
 import com.flick.app.data.model.SpotlightType
@@ -193,7 +194,8 @@ fun HomeScreen(
                                 containerColor = NetflixRed,
                                 contentColor = NetflixWhite
                             ),
-                            shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius))
+                            shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
+                            modifier = Modifier.touchClickable { onNavigateToSettings() }
                         ) {
                             Text(
                                 text = stringResource(R.string.btn_go_to_settings),
@@ -265,7 +267,10 @@ private fun MobileTopBar(
             horizontalArrangement = Arrangement.spacedBy(2.dp),
             verticalAlignment = Alignment.CenterVertically
         ) {
-            IconButton(onClick = onSearchClicked) {
+            IconButton(
+                onClick = onSearchClicked,
+                modifier = Modifier.touchClickable { onSearchClicked() }
+            ) {
                 Icon(
                     imageVector = Icons.Default.Search,
                     contentDescription = stringResource(R.string.action_search),
@@ -273,7 +278,10 @@ private fun MobileTopBar(
                     modifier = Modifier.size(24.dp)
                 )
             }
-            IconButton(onClick = onProfileClicked) {
+            IconButton(
+                onClick = onProfileClicked,
+                modifier = Modifier.touchClickable { onProfileClicked() }
+            ) {
                 Icon(
                     imageVector = Icons.Default.Person,
                     contentDescription = stringResource(R.string.nav_settings),
@@ -558,7 +566,8 @@ fun HeroSection(
                         .focusRequester(heroFocusRequester)
                         .focusProperties {
                             up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
-                        },
+                        }
+                        .touchClickable { onPlayClicked() },
                     colors = ButtonDefaults.colors(
                         containerColor = NetflixWhite,
                         contentColor = NetflixBlack,
@@ -589,7 +598,7 @@ fun HeroSection(
                         // Same guard as Play: without it UP from the billboard
                         // escaped into the sidebar.
                         up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
-                    },
+                    }.touchClickable { onInfoClicked() },
                     shape = OutlinedButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
                     border = OutlinedButtonDefaults.border(
                         border = Border(

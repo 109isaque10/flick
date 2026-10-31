@@ -48,6 +48,7 @@ import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import com.flick.app.ui.components.touchClickable
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -142,6 +143,7 @@ fun StreamSelectionDialog(
                         modifier = Modifier
                             .background(NetflixCardSurface, RoundedCornerShape(20.dp))
                             .size(36.dp)
+                            .touchClickable { onDismiss() }
                     ) {
                         Icon(
                             imageVector = Icons.Default.Close,
@@ -223,32 +225,37 @@ fun StreamSelectionDialog(
 
                             Spacer(modifier = Modifier.height(12.dp))
 
+                            val playCustomUrl: () -> Unit = {
+                                if (customUrlInput.isNotBlank()) {
+                                    onStreamSelected(
+                                        StremioStream(
+                                            name = "Custom Link",
+                                            title = "User Direct URL",
+                                            url = customUrlInput
+                                        )
+                                    )
+                                }
+                            }
+                            val openSettings: () -> Unit = {
+                                onDismiss()
+                                onNavigateToSettings()
+                            }
+
                             Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
                                 Button(
-                                    onClick = {
-                                        if (customUrlInput.isNotBlank()) {
-                                            onStreamSelected(
-                                                StremioStream(
-                                                    name = "Custom Link",
-                                                    title = "User Direct URL",
-                                                    url = customUrlInput
-                                                )
-                                            )
-                                        }
-                                    },
+                                    onClick = playCustomUrl,
                                     colors = ButtonDefaults.colors(containerColor = NetflixRed),
-                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                                    modifier = Modifier.touchClickable(onClick = playCustomUrl)
                                 ) {
                                     Text("Play Custom URL", fontSize = 13.sp)
                                 }
 
                                 Button(
-                                    onClick = {
-                                        onDismiss()
-                                        onNavigateToSettings()
-                                    },
+                                    onClick = openSettings,
                                     colors = ButtonDefaults.colors(containerColor = NetflixCardSurface),
-                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp))
+                                    shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
+                                    modifier = Modifier.touchClickable(onClick = openSettings)
                                 ) {
                                     Text("Open Settings", fontSize = 13.sp, color = NetflixWhite)
                                 }

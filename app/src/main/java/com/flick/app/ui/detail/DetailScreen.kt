@@ -85,6 +85,7 @@ import com.flick.app.data.model.EpisodeModel
 import com.flick.app.data.model.MediaItem
 import com.flick.app.data.model.SeasonModel
 import com.flick.app.ui.components.TvSpinner
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.home.BadgeTag
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.theme.NetflixBorderHighlight
@@ -246,6 +247,7 @@ private fun MobileDetailContent(
                     modifier = Modifier
                         .align(Alignment.TopStart)
                         .statusBarsPadding()
+                        .touchClickable { onBack() }
                         .padding(12.dp)
                         .background(NetflixBlack.copy(alpha = 0.6f), RoundedCornerShape(20.dp))
                 ) {
@@ -327,15 +329,16 @@ private fun MobileDetailContent(
                     } else {
                         stringResource(R.string.action_play)
                     }
+                    val playAction = {
+                        if (mediaItem.mediaType == "tv") {
+                            onPlayClick(smartNextSeason ?: selectedSeason?.seasonNumber ?: 1, smartNextEpisode ?: 1)
+                        } else {
+                            onPlayClick(null, null)
+                        }
+                    }
 
                     Button(
-                        onClick = {
-                            if (mediaItem.mediaType == "tv") {
-                                onPlayClick(smartNextSeason ?: selectedSeason?.seasonNumber ?: 1, smartNextEpisode ?: 1)
-                            } else {
-                                onPlayClick(null, null)
-                            }
-                        },
+                        onClick = playAction,
                         colors = ButtonDefaults.colors(
                             containerColor = NetflixWhite,
                             contentColor = NetflixBlack
@@ -345,6 +348,7 @@ private fun MobileDetailContent(
                         modifier = Modifier
                             .weight(1.6f)
                             .height(42.dp)
+                            .touchClickable(onClick = playAction)
                     ) {
                         Box(
                             modifier = Modifier.fillMaxSize(),
@@ -401,6 +405,7 @@ private fun MobileDetailContent(
                         modifier = Modifier
                             .weight(1f)
                             .height(42.dp)
+                            .touchClickable(onClick = onToggleWatchlist)
                     ) {
                         Icon(
                             imageVector = if (isWatchlisted) Icons.Default.Check else Icons.Default.Add,
@@ -426,7 +431,7 @@ private fun MobileDetailContent(
                             ),
                             shape = OutlinedButtonDefaults.shape(RoundedCornerShape(4.dp)),
                             contentPadding = PaddingValues(horizontal = 8.dp),
-                            modifier = Modifier.height(42.dp)
+                            modifier = Modifier.height(42.dp).touchClickable { onPlayTrailer() }
                         ) {
                             Text(
                                 text = stringResource(R.string.label_trailer),

@@ -64,6 +64,7 @@ import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
 import com.flick.app.R
 import com.flick.app.ui.components.TvSpinner
+import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.theme.NetflixLightGray
 import com.flick.app.ui.theme.NetflixRed
@@ -276,15 +277,17 @@ fun TrailerPlayerScreen(
                     Spacer(modifier = Modifier.height(10.dp))
                 }
 
+                val togglePlayback: () -> Unit = {
+                    if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
+                    interactionTick++
+                }
                 Row(verticalAlignment = Alignment.CenterVertically) {
                     IconButton(
-                        onClick = {
-                            if (exoPlayer.isPlaying) exoPlayer.pause() else exoPlayer.play()
-                            interactionTick++
-                        },
+                        onClick = togglePlayback,
                         modifier = Modifier
                             .size(48.dp)
                             .focusRequester(playPauseRequester)
+                            .touchClickable(onClick = togglePlayback)
                     ) {
                         when {
                             isBuffering -> TvSpinner(
