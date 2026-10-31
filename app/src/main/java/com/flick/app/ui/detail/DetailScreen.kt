@@ -65,6 +65,7 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -1162,8 +1163,12 @@ fun TvEpisodesView(
         val index = seasons.indexOfFirst { it.seasonNumber == selectedSeason?.seasonNumber }
         if (index >= 0) {
             runCatching { seasonListState.scrollToItem(index) }
+        }
+        repeat(6) {
             withFrameNanos { }
-            runCatching { selectedSeasonRequester.requestFocus() }
+            if (runCatching { selectedSeasonRequester.requestFocus() }.getOrDefault(false)) {
+                return@LaunchedEffect
+            }
         }
     }
 
@@ -1291,11 +1296,14 @@ fun TvEpisodesView(
 
                 LazyColumn(
                     state = seasonListState,
-                    // Mirror of the rail: the group's restorer is pinned to the
-                    // season being watched, so focus lands there on entry with no
-                    // intermediate jump. The scroll below is still needed because
+                    // Mirror of the rail: the group resolves the season being
+                    // watched synchronously during focus search, so focus lands
+                    // there on entry. The scroll above is still needed because
                     // that row may be outside the lazily composed window.
-                    modifier = Modifier.weight(1f).focusGroup().focusRestorer(selectedSeasonRequester),
+                    modifier = Modifier
+                        .weight(1f)
+                        .focusProperties { enter = { selectedSeasonRequester } }
+                        .focusGroup(),
                     verticalArrangement = Arrangement.spacedBy(8.dp)
                 ) {
                     items(seasons, key = { it.seasonNumber }) { season ->
@@ -1318,7 +1326,7 @@ fun TvEpisodesView(
                                 )
                                 .onFocusChanged { isSeasonFocused = it.isFocused }
                                 .then(
-                                    if (isSelected) {
+                                    if (isSelected || (selectedSeason == null && seasons.firstOrNull()?.seasonNumber == season.seasonNumber)) {
                                         Modifier.focusRequester(selectedSeasonRequester)
                                     } else {
                                         Modifier

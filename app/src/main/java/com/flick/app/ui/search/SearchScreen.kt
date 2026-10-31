@@ -225,8 +225,15 @@ fun SearchScreen(
         // typing can begin immediately without navigating from the query bar.
         val keyboardFocusRequester = remember { FocusRequester() }
         LaunchedEffect(Unit) {
-            withFrameNanos { }
-            runCatching { keyboardFocusRequester.requestFocus() }
+            // Retry across frames: the key grid is lazily composed, so a single
+            // requestFocus() on the first frame silently fails and leaves focus
+            // parked on the sidebar (N3).
+            repeat(6) {
+                withFrameNanos { }
+                if (runCatching { keyboardFocusRequester.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+            }
         }
 
         Row(

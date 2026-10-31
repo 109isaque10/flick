@@ -45,6 +45,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
@@ -197,8 +198,15 @@ fun SettingsScreen(
 
     LaunchedEffect(category, isMobile, bodyFocusTick) {
         if (!isMobile) {
-            withFrameNanos { }
-            runCatching { firstControl.requestFocus() }
+            // Retry across frames: the pane body (and therefore firstControl) is
+            // not attached during the first composition, so a single attempt
+            // silently fails and leaves focus parked on the sidebar (N3).
+            repeat(6) {
+                withFrameNanos { }
+                if (runCatching { firstControl.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+            }
         }
     }
 
@@ -453,11 +461,12 @@ fun SettingsScreen(
                 modifier = Modifier
                     .width(240.dp)
                     .fillMaxHeight()
-                    // Entering the category column from the pane body resolves the
-                    // selected category as the group is entered, instead of the
-                    // row geometrically closest to the control the viewer left.
+                    // Entering the category column from the pane body resolves
+                    // the selected category synchronously during focus search,
+                    // instead of focusing the row geometrically closest to the
+                    // control the viewer left and then jumping.
+                    .focusProperties { enter = { categoryColumnRequester } }
                     .focusGroup()
-                    .focusRestorer(categoryColumnRequester)
             ) {
                 Text(
                     text = stringResource(R.string.settings_title),
@@ -1165,8 +1174,11 @@ fun AutoSaveInputField(
             keyboardActions = KeyboardActions(
                 onDone = {
                     onSave(input)
-                    focusManager.clearFocus()
                     keyboardController?.hide()
+                    // A2: clearing focus on TV bubbles the focus search up to the
+                    // root and parks it on the sidebar, which then swallows D-pad
+                    // input. Keep focus on the field and only hide the IME.
+                    if (!isTv) focusManager.clearFocus()
                 }
             ),
             textStyle = TextStyle(color = NetflixWhite, fontSize = 15.sp),

@@ -1,4 +1,4 @@
-name: Build Signed Release
+name: Build & Publish Release
 
 on:
   workflow_dispatch:
@@ -23,7 +23,7 @@ on:
           - 'apk'
           - 'aab'
       create_github_release:
-        description: 'Create a GitHub Release draft with the signed outputs?'
+        description: 'Create a GitHub Release (publish directly) with the signed outputs?'
         required: false
         default: true
         type: boolean
@@ -35,41 +35,47 @@ permissions:
   contents: write
 
 jobs:
-  release:
-    name: Build Signed Release
+  build:
     runs-on: ubuntu-latest
-
+    outputs:
+      release_tag: ${{ steps.set_tag.outputs.tag }}
     steps:
-      - name: Checkout Code
+      # -------------------------------------------------------------
+      # 1️⃣ Checkout
+      # -------------------------------------------------------------
+      - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          fetch-depth: 1   # shallow clone – enough for building
 
-      - name: Resolve Version Parameters
-        id: versioning
+      # -------------------------------------------------------------
+      # 2️⃣ Set version‑related env vars (single source of truth)
+      # -------------------------------------------------------------
+      - name: Set version env
+        id: version
         run: |
+          # For a manual dispatch we use the explicit inputs.
+          # For a tag push we derive the version name from the tag (strip the leading “v”)
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            V_NAME="${{ github.event.inputs.version_name }}"
-            V_CODE="${{ github.event.inputs.version_code }}"
-            FORMAT="${{ github.event.inputs.build_format }}"
-            CREATE_REL="${{ github.event.inputs.create_github_release }}"
+            echo "VERSION_NAME=${{ github.event.inputs.version_name }}" >> $GITHUB_ENV
+            echo "VERSION_CODE=${{ github.event.inputs.version_code }}" >> $GITHUB_ENV
           else
-            # Triggered by tag (e.g. v1.2.0)
-            TAG_REF="${{ github.ref_name }}"
-            V_NAME="${TAG_REF#v}"
-            # Use GitHub run number as unique incrementing version code for tag builds
-            V_CODE="${{ github.run_number }}"
-            FORMAT="both"
-            CREATE_REL="true"
+            TAG=${{ github.ref_name }}               # e.g. v1.2.3
+            echo "VERSION_NAME=${TAG#v}" >> $GITHUB_ENV   # strip the “v”
+            echo "VERSION_CODE=${{ github.run_number }}" >> $GITHUB_ENV   # same logic as original
           fi
 
-          echo "VERSION_NAME=$V_NAME" >> $GITHUB_ENV
-          echo "VERSION_CODE=$V_CODE" >> $GITHUB_ENV
-          echo "BUILD_FORMAT=$FORMAT" >> $GITHUB_ENV
-          echo "CREATE_RELEASE=$CREATE_REL" >> $GITHUB_ENV
+          echo "FORMAT=${{ github.event.inputs.build_format }}" >> $GITHUB_ENV
+          echo "CREATE_RELEASE=${{ github.event.inputs.create_github_release }}" >> $GITHUB_ENV
 
-          echo "Target Version Name: $V_NAME"
-          echo "Target Version Code: $V_CODE"
+          echo "Target Version Name: $VERSION_NAME"
+          echo "Target Version Code: $VERSION_CODE"
           echo "Build Format: $FORMAT"
+          echo "Create Release: $CREATE_RELEASE"
 
+      # -------------------------------------------------------------
+      # 3️⃣ Java & Gradle setup (cached)
+      # -------------------------------------------------------------
       - name: Set up JDK 21
         uses: actions/setup-java@v4
         with:
@@ -77,101 +83,81 @@ jobs:
           distribution: 'temurin'
           cache: 'gradle'
 
-      - name: Setup Gradle
+      - name: Setup Gradle wrapper (ensure it’s up‑to‑date)
         uses: gradle/actions/setup-gradle@v4
+        with:
+          wrapperVersion: 'latest'
 
-      - name: Validate and Decode Release Keystore
-        id: keystore
+      # -------------------------------------------------------------
+      # 4️⃣ Decode the release keystore (if a secret is supplied)
+      # -------------------------------------------------------------
+      - name: Decode keystore
         env:
           KEYSTORE_BASE64: ${{ secrets.RELEASE_KEYSTORE_BASE64 || secrets.KEYSTORE_BASE64 }}
           STORE_PWD: ${{ secrets.RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD }}
           KEY_PWD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD }}
         run: |
-          if [ -z "$KEYSTORE_BASE64" ]; then
-            echo "::error::Missing secret RELEASE_KEYSTORE_BASE64 or KEYSTORE_BASE64 in GitHub Secrets!"
-            echo "Please encode your release .jks keystore using: base64 -w 0 my-upload-key.jks"
-            echo "And add it as 'RELEASE_KEYSTORE_BASE64' under Repository Settings -> Secrets and variables -> Actions."
-            exit 1
-          fi
-
-          if [ -z "$STORE_PWD" ] || [ -z "$KEY_PWD" ]; then
-            echo "::error::Missing STORE_PASSWORD or KEY_PASSWORD in GitHub Secrets!"
-            echo "Please set RELEASE_STORE_PASSWORD and RELEASE_KEY_PASSWORD (or STORE_PASSWORD / KEY_PASSWORD) in GitHub Secrets."
-            exit 1
-          fi
-
           KEYSTORE_DEST="${{ github.workspace }}/my-upload-key.jks"
           echo "$KEYSTORE_BASE64" | base64 -d > "$KEYSTORE_DEST"
-
-          if [ ! -s "$KEYSTORE_DEST" ]; then
-            echo "::error::Failed to decode keystore! Output file is empty."
-            exit 1
-          fi
-
-          echo "Keystore decoded successfully to $KEYSTORE_DEST"
           echo "KEYSTORE_PATH=$KEYSTORE_DEST" >> $GITHUB_ENV
 
-      - name: Grant Execute Permission to Gradlew
-        run: chmod +x ./gradlew
-
-      - name: Build Signed Android Package(s)
+      # -------------------------------------------------------------
+      # 5️⃣ Build the required artifact(s) (single Gradle invocation)
+      # -------------------------------------------------------------
+      - name: Build signed artifacts
         env:
           KEYSTORE_PATH: ${{ env.KEYSTORE_PATH }}
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD }}
         run: |
-          GRADLE_TASKS=""
-          if [ "$BUILD_FORMAT" = "apk" ]; then
-            GRADLE_TASKS="assembleRelease"
-          elif [ "$BUILD_FORMAT" = "aab" ]; then
-            GRADLE_TASKS="bundleRelease"
-          else
-            GRADLE_TASKS="assembleRelease bundleRelease"
+          # Choose the Gradle tasks based on the requested format
+          if [ "$FORMAT" = "apk" ]; then
+            ./gradlew assembleRelease \
+              -PversionName="${VERSION_NAME}" \
+              -PversionCode="${VERSION_CODE}" \
+              --no-daemon \
+              --parallel \
+              --max-workers=2
+            cp app/build/outputs/apk/release/*.apk release-artifacts/Flick-${VERSION_NAME}-c${VERSION_CODE}.apk
+          elif [ "$FORMAT" = "aab" ]; then
+            ./gradlew bundleRelease \
+              -PversionName="${VERSION_NAME}" \
+              -PversionCode="${VERSION_CODE}" \
+              --no-daemon \
+              --parallel \
+              --max-workers=2
+            cp app/build/outputs/bundle/release/*.aab release-artifacts/Flick-${VERSION_NAME}-c${VERSION_CODE}.aab
+          else   # both
+            ./gradlew assembleRelease bundleRelease \
+              -PversionName="${VERSION_NAME}" \
+              -PversionCode="${VERSION_CODE}" \
+              --no-daemon \
+              --parallel \
+              --max-workers=2
+            cp app/build/outputs/apk/release/*.apk release-artifacts/Flick-${VERSION_NAME}-c${VERSION_CODE}.apk
+            cp app/build/outputs/bundle/release/*.aab release-artifacts/Flick-${VERSION_NAME}-c${VERSION_CODE}.aab
           fi
 
-          echo "Executing: ./gradlew $GRADLE_TASKS -PversionCode=$VERSION_CODE -PversionName=$VERSION_NAME"
-          ./gradlew $GRADLE_TASKS \
-            -PversionCode="$VERSION_CODE" \
-            -PversionName="$VERSION_NAME" \
-            --no-daemon \
-            --stacktrace
-
-      - name: Rename Release Files with Version Tag
-        run: |
-          mkdir -p release-artifacts
-          if ls app/build/outputs/apk/release/*.apk 1> /dev/null 2>&1; then
-            cp app/build/outputs/apk/release/*.apk release-artifacts/Flick-v${VERSION_NAME}-c${VERSION_CODE}-release.apk
-          fi
-          if ls app/build/outputs/bundle/release/*.aab 1> /dev/null 2>&1; then
-            cp app/build/outputs/bundle/release/*.aab release-artifacts/Flick-v${VERSION_NAME}-c${VERSION_CODE}-release.aab
-          fi
-          ls -lah release-artifacts/
-
-      - name: Upload Signed Release Artifacts
+      # -------------------------------------------------------------
+      # 6️⃣ Upload the built artifacts (as a single workflow artifact)
+      # -------------------------------------------------------------
+      - name: Upload release artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: app-release-${{ env.VERSION_NAME }}-build-${{ env.VERSION_CODE }}
+          name: flick-release-${{ env.VERSION_NAME }}-${{ env.VERSION_CODE }}
           path: release-artifacts/*
-          if-no-files-found: error
           retention-days: 30
 
-      - name: Create GitHub Release
+      # -------------------------------------------------------------
+      # 7️⃣ (Optional) Publish a GitHub Release
+      # -------------------------------------------------------------
+      - name: Publish GitHub Release
         if: env.CREATE_RELEASE == 'true'
         uses: softprops/action-gh-release@v2
         with:
           tag_name: v${{ env.VERSION_NAME }}
           name: Flick v${{ env.VERSION_NAME }} (Build ${{ env.VERSION_CODE }})
-          draft: ${{ github.event_name == 'workflow_dispatch' }}
+          draft: false          # publish directly; remove the draft flag
           prerelease: false
           files: release-artifacts/*
-          body: |
-            ## Flick Release v${{ env.VERSION_NAME }}
-            - **Version Code**: `${{ env.VERSION_CODE }}`
-            - **Commit**: `${{ github.sha }}`
-            - **Build Date**: `${{ github.run_started_at }}`
 
-            ### Downloads:
-            - **APK**: For direct sideloading and testing on Android devices.
-            - **AAB**: Android App Bundle ready for Google Play Store upload.
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

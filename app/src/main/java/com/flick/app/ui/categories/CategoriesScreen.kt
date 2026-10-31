@@ -38,10 +38,11 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
+import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.focus.FocusRequester
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
@@ -65,7 +66,7 @@ import com.flick.app.ui.theme.isCompactScreen
 
 data class GenreItem(val id: Int, val name: String)
 
-@OptIn(ExperimentalTvMaterial3Api::class)
+@OptIn(ExperimentalTvMaterial3Api::class, ExperimentalComposeUiApi::class)
 @Composable
 fun CategoriesScreen(
     genres: List<GenreItem>,
@@ -168,14 +169,21 @@ fun CategoriesScreen(
         val genreListState = rememberLazyListState()
         val selectedGenreRequester = remember { FocusRequester() }
         // Land on the genre that is already selected so the screen always has a
-        // focusable entry point (A4) and opening it never jumps (F1). This is the
-        // same mechanism the details screen uses for its season list.
+        // focusable entry point (A4/N3) and opening it never jumps (F1). This is
+        // the same mechanism the details screen uses for its season list.
         LaunchedEffect(selectedGenre?.id, genres) {
             val index = genres.indexOfFirst { it.id == selectedGenre?.id }
             if (index >= 0) {
                 runCatching { genreListState.scrollToItem(index) }
+            }
+            // Retry across a few frames: on the first composition the list and its
+            // item node are not attached yet, so a single requestFocus() silently
+            // fails (that is how the screen ended up with nothing focusable).
+            repeat(6) {
                 withFrameNanos { }
-                runCatching { selectedGenreRequester.requestFocus() }
+                if (runCatching { selectedGenreRequester.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
             }
         }
         Row(
@@ -200,13 +208,13 @@ fun CategoriesScreen(
 
                 LazyColumn(
                     state = genreListState,
-                    // Entering the genre column resolves the selected genre as the
-                    // group is entered, so the nearest row is never focused first
-                    // and nothing hops to the selection afterwards.
+                    // Entering the genre column resolves the selected genre
+                    // synchronously, while the focus engine is still searching:
+                    // no nearest row is focused first and nothing hops after.
                     modifier = Modifier
                         .fillMaxSize()
-                        .focusGroup()
-                        .focusRestorer(selectedGenreRequester),
+                        .focusProperties { enter = { selectedGenreRequester } }
+                        .focusGroup(),
                     verticalArrangement = Arrangement.spacedBy(6.dp)
                 ) {
                     items(genres, key = { it.id }) { genre ->
@@ -229,7 +237,7 @@ fun CategoriesScreen(
                                 )
                                 .onFocusChanged { isFocused = it.isFocused }
                                 .then(
-                                    if (isSelected) {
+                                    if (isSelected || (selectedGenre == null && genres.firstOrNull()?.id == genre.id)) {
                                         Modifier.focusRequester(selectedGenreRequester)
                                     } else {
                                         Modifier

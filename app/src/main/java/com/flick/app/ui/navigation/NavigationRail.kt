@@ -60,8 +60,8 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
+import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.focusRestorer
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.onPreviewKeyEvent
@@ -242,22 +242,12 @@ fun FlickNavRail(
     val selectedIndex = destinations.indexOf(currentDestination).let {
         if (it >= 0) it else if (currentDestination == NavDestination.SETTINGS) destinations.size else 0
     }
-    // The rail container is a focusGroup with a focusRestorer pinned to the
-    // current section, so entering it resolves the selected item as the group is
-    // entered: the nearest item is never focused first and nothing hops
-    // afterwards. The effect below is only a defensive fallback for the case
-    // where the restorer has no saved focus to give back.
-    LaunchedEffect(railEngaged, selectedIndex) {
-        if (railEngaged) {
-            val target = focusRequesters[selectedIndex]
-            repeat(3) {
-                withFrameNanos { }
-                if (runCatching { target.requestFocus() }.getOrDefault(false)) {
-                    return@LaunchedEffect
-                }
-            }
-        }
-    }
+    // Entering the rail resolves the current section synchronously, during the
+    // focus search itself: `enter` hands the engine the selected item's requester
+    // before the first frame is drawn, so nothing is focused first and yanked
+    // afterwards. A `focusRestorer` cannot express this (it prefers the last
+    // historically focused child and only falls back otherwise), and the old
+    // requestFocus() retry loop was the visible hop.
 
     Box(
         modifier = modifier
@@ -266,10 +256,9 @@ fun FlickNavRail(
             .fillMaxHeight()
             .statusBarsPadding()
             // Entering the rail lands on the section that is currently open
-            // instead of the item geometrically closest to the content, which
-            // used to focus the wrong row first and then jump to the selection.
+            // instead of the item geometrically closest to the content.
+            .focusProperties { enter = { focusRequesters[selectedIndex] } }
             .focusGroup()
-            .focusRestorer(focusRequesters[selectedIndex])
             .onFocusChanged { state ->
                 if (state.hasFocus && !railHasFocus) {
                     // Expand as soon as the viewer deliberately navigates into the

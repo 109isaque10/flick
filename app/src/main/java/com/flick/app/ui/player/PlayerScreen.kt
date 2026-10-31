@@ -443,11 +443,30 @@ fun PlayerScreen(
     // node was focused, so remote keys (including OK) never reached this screen.
     // This sink is composed whenever the overlay is unavailable and restores it.
     val playerFocusSink = remember { FocusRequester() }
+    // The Up Next card is the only interactive surface while it is up, so D-pad
+    // focus has to live inside it. Without this the root sink holds focus, OK is
+    // stolen by the overlay handler and the card is unreachable (B3).
+    val upNextFocusRequester = remember { FocusRequester() }
     // Landing targets inside the episodes drawer, so opening it actually moves
     // D-pad focus off the player buttons: the first episode row is the primary
     // target; the selected season chip is the fallback when the list is empty.
     val drawerFocusRequester = remember { FocusRequester() }
     val drawerEpisodeFocusRequester = remember { FocusRequester() }
+    LaunchedEffect(showUpNextPopup, isMobile) {
+        if (!isMobile) {
+            // The card mounts in the same frame it is shown, so the requester is
+            // not attached yet; retry. When it closes, hand focus back to the
+            // player sink so OK still reaches the overlay.
+            val target = if (showUpNextPopup) upNextFocusRequester else playerFocusSink
+            repeat(6) {
+                withFrameNanos { }
+                if (runCatching { target.requestFocus() }.getOrDefault(false)) {
+                    return@LaunchedEffect
+                }
+            }
+        }
+    }
+
     LaunchedEffect(isControlsVisible, playerError) {
         // The overlay's focus target leaves composition in the same frame the
         // controls hide, so the sink may not be attached on the first attempt.
@@ -605,7 +624,9 @@ fun PlayerScreen(
                         AndroidKeyEvent.KEYCODE_DPAD_CENTER,
                         AndroidKeyEvent.KEYCODE_ENTER,
                         AndroidKeyEvent.KEYCODE_NUMPAD_ENTER -> {
-                            if (!isControlsVisible) {
+                            // While the Up Next card is visible it owns OK; the root
+                            // must not steal it to reveal the overlay (B3).
+                            if (!isControlsVisible && !showUpNextPopup) {
                                 isControlsVisible = true
                                 true
                             } else false
@@ -1687,6 +1708,10 @@ fun PlayerScreen(
                             modifier = Modifier
                                 .fillMaxWidth()
                                 .aspectRatio(16f / 9f)
+                                // clickable already provides the focus target; an
+                                // extra focusable() here created a second one and
+                                // broke DPAD_CENTER activation.
+                                .focusRequester(upNextFocusRequester)
                                 .border(
                                     2.dp,
                                     if (thumbnailFocused) NetflixRed else NetflixWhite,
