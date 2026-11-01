@@ -1077,12 +1077,12 @@ class MediaRepository(
         }
     }
 
-    suspend fun toggleWatchlist(item: MediaItem, traktRepository: TraktRepository? = null) {
+    suspend fun toggleWatchlist(item: MediaItem, trackingRepository: TrackingRepository? = null) {
         val idKey = "${item.mediaType}_${item.id}"
         val isCurrentlyInWatchlist = watchlistDao.isInWatchlist(idKey)
         if (isCurrentlyInWatchlist) {
             watchlistDao.removeFromWatchlist(idKey)
-            traktRepository?.syncWatchlistToTrakt(item, isAdd = false)
+            trackingRepository?.syncWatchlistItem(item, isAdd = false)
         } else {
             watchlistDao.addToWatchlist(
                 WatchlistEntity(
@@ -1096,7 +1096,7 @@ class MediaRepository(
                     releaseDate = item.releaseYear
                 )
             )
-            traktRepository?.syncWatchlistToTrakt(item, isAdd = true)
+            trackingRepository?.syncWatchlistItem(item, isAdd = true)
         }
     }
 

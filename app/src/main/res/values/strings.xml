@@ -173,4 +173,12 @@
     <string name="settings_trakt_step_visit_format">1. Visit: %1$s</string>
     <string name="settings_trakt_step_code_format">2. Enter Code: %1$s</string>
     <string name="season_episode_tag_format">S%1$d: E%2$d</string>
+
+    <!-- Tracking backend selection (Trakt vs FlickList) -->
+    <string name="tracking_backend_title">Tracking Backend</string>
+    <string name="tracking_backend_hint">Which service syncs your watchlist, resume points and playback progress.</string>
+    <string name="tracking_backend_trakt">Trakt</string>
+    <string name="tracking_backend_flicklist">FlickList</string>
+    <string name="flicklist_account_title">FlickList Account Sync</string>
+    <string name="flicklist_account_hint">Register an app at flicklist.tv for a Client ID, or paste a personal API key. Both sync your watchlist and scrobble playback.</string>
 </resources>

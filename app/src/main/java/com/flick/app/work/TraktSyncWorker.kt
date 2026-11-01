@@ -13,14 +13,21 @@ import androidx.work.WorkManager
 import androidx.work.WorkerParameters
 import com.flick.app.data.local.SettingsDataStore
 import com.flick.app.data.local.FlickDatabase
+import com.flick.app.data.repository.FlickListRepository
 import com.flick.app.data.repository.TraktRepository
+import com.flick.app.data.repository.TrackingRepository
+import kotlinx.coroutines.flow.first
 import java.util.concurrent.TimeUnit
 
 /**
- * Reconciles the Trakt watchlist and playback history, which is what refreshes
- * the "Continue Watching" rail. It used to run as a network call launched while
- * the first frame was composing; as a worker it runs off the launch path under
- * explicit constraints.
+ * Reconciles the selected tracking backend's watchlist and playback history,
+ * which is what refreshes the "Continue Watching" rail. It runs for whichever
+ * of Trakt or FlickList the viewer has chosen in Settings; both reconcile calls
+ * are no-ops without a credential.
+ *
+ * It used to run as a network call launched while the first frame was
+ * composing; as a worker it runs off the launch path under explicit
+ * constraints.
  */
 class TraktSyncWorker(
     appContext: Context,
@@ -29,14 +36,19 @@ class TraktSyncWorker(
 
     override suspend fun doWork(): Result {
         val db = FlickDatabase.getDatabase(applicationContext)
-        val trakt = TraktRepository(
-            settingsDataStore = SettingsDataStore(applicationContext),
-            watchlistDao = db.watchlistDao(),
-            watchProgressDao = db.watchProgressDao()
-        )
+        val settings = SettingsDataStore(applicationContext)
+        val watchlistDao = db.watchlistDao()
+        val watchProgressDao = db.watchProgressDao()
+
+        val tracking: TrackingRepository = if (settings.trackingBackend.first() == "FLICKLIST") {
+            FlickListRepository(settings, watchlistDao, watchProgressDao)
+        } else {
+            TraktRepository(settings, watchlistDao, watchProgressDao)
+        }
+
         return try {
-            trakt.syncWatchlist()
-            trakt.syncPlayback()
+            tracking.syncWatchlist()
+            tracking.syncPlayback()
             Result.success()
         } catch (t: Throwable) {
             // Offline is expected on a TV; back off and let the constraints retry.

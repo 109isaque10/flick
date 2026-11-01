@@ -174,4 +174,12 @@
     <string name="settings_trakt_step_visit_format">1. Acesse: %1$s</string>
     <string name="settings_trakt_step_code_format">2. Insira o Código: %1$s</string>
     <string name="season_episode_tag_format">T%1$d: E%2$d</string>
+
+    <!-- Tracking backend selection (Trakt vs FlickList) -->
+    <string name="tracking_backend_title">Serviço de Sincronização</string>
+    <string name="tracking_backend_hint">Qual serviço sincroniza sua lista, seus pontos de retomada e o progresso de reprodução.</string>
+    <string name="tracking_backend_trakt">Trakt</string>
+    <string name="tracking_backend_flicklist">FlickList</string>
+    <string name="flicklist_account_title">Sincronização com o FlickList</string>
+    <string name="flicklist_account_hint">Registre um app em flicklist.tv para obter um Client ID, ou cole uma chave de API pessoal. Ambos sincronizam sua lista e enviam o progresso de reprodução.</string>
 </resources>

@@ -167,6 +167,17 @@ fun SettingsScreen(
     traktVerificationUrl: String?,
     onRequestTraktPairing: () -> Unit,
     onDisconnectTrakt: () -> Unit,
+    trackingBackend: String,
+    onSelectTrackingBackend: (String) -> Unit,
+    flickListClientId: String,
+    onSaveFlickListClientId: (String) -> Unit,
+    flickListApiKey: String,
+    onSaveFlickListApiKey: (String) -> Unit,
+    flickListUsername: String?,
+    flickListDeviceCode: String?,
+    flickListVerificationUrl: String?,
+    onRequestFlickListPairing: () -> Unit,
+    onDisconnectFlickList: () -> Unit,
     completionThreshold: Int = 90,
     onSaveCompletionThreshold: (Int) -> Unit = {},
     upNextThreshold: Int = 90,
@@ -371,13 +382,101 @@ fun SettingsScreen(
 
             if (SettingsCategory.ACCOUNTS in cats) {
                 item {
+                    SettingsSectionHeader(title = stringResource(R.string.tracking_backend_title))
+                    SettingHint(stringResource(R.string.tracking_backend_hint))
+                    Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                        TvChoiceButton(
+                            text = stringResource(R.string.tracking_backend_trakt),
+                            selected = trackingBackend != "FLICKLIST",
+                            onClick = { onSelectTrackingBackend("TRAKT") },
+                            // The pane's first control. This row is composed for
+                            // every ACCOUNTS pane, so Back and Enter always have a
+                            // node to land on whichever backend is selected.
+                            modifier = firstControlModifier
+                        )
+                        TvChoiceButton(
+                            text = stringResource(R.string.tracking_backend_flicklist),
+                            selected = trackingBackend == "FLICKLIST",
+                            onClick = { onSelectTrackingBackend("FLICKLIST") }
+                        )
+                    }
+                }
+            }
+
+            if (SettingsCategory.ACCOUNTS in cats && trackingBackend == "FLICKLIST") {
+                item {
+                    SettingsSectionHeader(title = stringResource(R.string.flicklist_account_title))
+                    SettingHint(stringResource(R.string.flicklist_account_hint))
+                    AutoSaveInputField(
+                        initialValue = flickListClientId,
+                        placeholder = "Enter FlickList Client ID",
+                        onSave = onSaveFlickListClientId
+                    )
+                    Spacer(modifier = Modifier.height(12.dp))
+                    AutoSaveInputField(
+                        initialValue = flickListApiKey,
+                        placeholder = "Paste FlickList API key (fs_live_...) - optional",
+                        onSave = onSaveFlickListApiKey
+                    )
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    if (!flickListUsername.isNullOrBlank()) {
+                        Text(
+                            text = stringResource(R.string.trakt_connected_status, flickListUsername),
+                            color = NetflixRed,
+                            fontSize = 16.sp,
+                            fontWeight = FontWeight.Bold
+                        )
+                        Spacer(modifier = Modifier.height(12.dp))
+                        TvActionButton(
+                            text = stringResource(R.string.action_disconnect),
+                            onClick = onDisconnectFlickList
+                        )
+                    } else if (!flickListDeviceCode.isNullOrBlank() && !flickListVerificationUrl.isNullOrBlank()) {
+                        Column(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .background(NetflixCardSurface, RoundedCornerShape(8.dp))
+                                .padding(16.dp)
+                        ) {
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_trakt_step_visit_format,
+                                    flickListVerificationUrl
+                                ),
+                                color = NetflixWhite,
+                                fontSize = 15.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                            Spacer(modifier = Modifier.height(6.dp))
+                            Text(
+                                text = stringResource(
+                                    R.string.settings_trakt_step_code_format,
+                                    flickListDeviceCode
+                                ),
+                                color = NetflixRed,
+                                fontSize = 22.sp,
+                                fontWeight = FontWeight.Black,
+                                letterSpacing = 2.sp
+                            )
+                        }
+                    } else {
+                        TvActionButton(
+                            text = stringResource(R.string.action_connect),
+                            onClick = onRequestFlickListPairing
+                        )
+                    }
+                }
+            }
+
+            if (SettingsCategory.ACCOUNTS in cats && trackingBackend != "FLICKLIST") {
+                item {
                     SettingsSectionHeader(title = stringResource(R.string.trakt_account_title))
                     SettingHint("Trakt Client ID and Client Secret from your Trakt API app. Both are required for device pairing.")
                     AutoSaveInputField(
                         initialValue = traktApiKey,
                         placeholder = "Enter Trakt Client ID / API Key",
-                        onSave = onSaveTraktApiKey,
-                        modifier = firstControlModifier
+                        onSave = onSaveTraktApiKey
                     )
                     Spacer(modifier = Modifier.height(12.dp))
                     AutoSaveInputField(

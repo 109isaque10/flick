@@ -66,6 +66,15 @@ object ApiClient {
             .create(TraktApi::class.java)
     }
 
+    val flickListApi: FlickListApi by lazy {
+        Retrofit.Builder()
+            .baseUrl("https://flicklist.tv/api/")
+            .client(okHttpClient)
+            .addConverterFactory(MoshiConverterFactory.create(moshi))
+            .build()
+            .create(FlickListApi::class.java)
+    }
+
     fun buildStremioApi(addonBaseUrl: String): StremioApi {
         val formattedUrl = if (addonBaseUrl.endsWith("/")) addonBaseUrl else "$addonBaseUrl/"
         return Retrofit.Builder()

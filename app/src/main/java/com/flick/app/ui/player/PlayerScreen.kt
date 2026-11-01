@@ -156,6 +156,7 @@ fun PlayerScreen(
     onSelectEpisode: ((Int, Int) -> Unit)? = null,
     episodeProgressMap: Map<String, Float> = emptyMap(),
     completionThreshold: Int = 90,
+    onIsPlayingChanged: (Boolean) -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     val context = LocalContext.current
@@ -195,6 +196,10 @@ fun PlayerScreen(
     var savedPlaybackPosition by rememberSaveable { mutableLongStateOf(0L) }
     var exoPlayer by remember { mutableStateOf<ExoPlayer?>(null) }
     var isPlaying by remember { mutableStateOf(true) }
+
+    // Surface the transport state to the host so tracking backends can pause or
+    // stop the scrobble session without the player leaking its internals upward.
+    LaunchedEffect(isPlaying) { onIsPlayingChanged(isPlaying) }
     var currentPosition by remember { mutableLongStateOf(0L) }
     var duration by remember { mutableLongStateOf(1L) }
     var isControlsVisible by remember { mutableStateOf(true) }

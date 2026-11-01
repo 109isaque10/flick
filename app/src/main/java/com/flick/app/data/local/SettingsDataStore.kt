@@ -34,6 +34,11 @@ class SettingsDataStore(private val context: Context) {
         val KEY_TRAKT_ACCESS_TOKEN = stringPreferencesKey("trakt_access_token")
         val KEY_TRAKT_REFRESH_TOKEN = stringPreferencesKey("trakt_refresh_token")
         val KEY_TRAKT_USERNAME = stringPreferencesKey("trakt_username")
+        val KEY_TRACKING_BACKEND = stringPreferencesKey("tracking_backend") // "TRAKT" or "FLICKLIST"
+        val KEY_FLICKLIST_CLIENT_ID = stringPreferencesKey("flicklist_client_id")
+        val KEY_FLICKLIST_API_KEY = stringPreferencesKey("flicklist_api_key")
+        val KEY_FLICKLIST_ACCESS_TOKEN = stringPreferencesKey("flicklist_access_token")
+        val KEY_FLICKLIST_USERNAME = stringPreferencesKey("flicklist_username")
         val KEY_AUTO_PLAY = booleanPreferencesKey("auto_play")
         val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
 
@@ -109,6 +114,27 @@ class SettingsDataStore(private val context: Context) {
 
     val traktUsername: Flow<String?> = context.dataStore.data.map { prefs ->
         prefs[KEY_TRAKT_USERNAME]
+    }
+
+    /** Which tracking backend syncs the watchlist, resume points and scrobbles. */
+    val trackingBackend: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_TRACKING_BACKEND] ?: "TRAKT"
+    }
+
+    val flickListClientId: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FLICKLIST_CLIENT_ID] ?: ""
+    }
+
+    val flickListApiKey: Flow<String> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FLICKLIST_API_KEY] ?: ""
+    }
+
+    val flickListAccessToken: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FLICKLIST_ACCESS_TOKEN]
+    }
+
+    val flickListUsername: Flow<String?> = context.dataStore.data.map { prefs ->
+        prefs[KEY_FLICKLIST_USERNAME]
     }
 
     val autoPlayEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
@@ -210,6 +236,46 @@ class SettingsDataStore(private val context: Context) {
             prefs.remove(KEY_TRAKT_ACCESS_TOKEN)
             prefs.remove(KEY_TRAKT_REFRESH_TOKEN)
             prefs.remove(KEY_TRAKT_USERNAME)
+        }
+    }
+
+    suspend fun setTrackingBackend(backend: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_TRACKING_BACKEND] = backend
+        }
+    }
+
+    suspend fun saveFlickListClientId(clientId: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FLICKLIST_CLIENT_ID] = clientId
+        }
+    }
+
+    suspend fun saveFlickListApiKey(key: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FLICKLIST_API_KEY] = key
+        }
+    }
+
+    suspend fun saveFlickListUsername(username: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FLICKLIST_USERNAME] = username
+        }
+    }
+
+    suspend fun saveFlickListAuth(username: String, accessToken: String) {
+        context.dataStore.edit { prefs ->
+            prefs[KEY_FLICKLIST_USERNAME] = username
+            prefs[KEY_FLICKLIST_ACCESS_TOKEN] = accessToken
+        }
+    }
+
+    /** Clears the credentials (API key included) but keeps the registered app id. */
+    suspend fun clearFlickListAuth() {
+        context.dataStore.edit { prefs ->
+            prefs.remove(KEY_FLICKLIST_ACCESS_TOKEN)
+            prefs.remove(KEY_FLICKLIST_USERNAME)
+            prefs.remove(KEY_FLICKLIST_API_KEY)
         }
     }
 

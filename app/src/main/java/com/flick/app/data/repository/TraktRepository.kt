@@ -31,7 +31,7 @@ class TraktRepository(
     private val settingsDataStore: SettingsDataStore,
     private val watchlistDao: WatchlistDao? = null,
     private val watchProgressDao: WatchProgressDao? = null
-) {
+) : TrackingRepository {
     // Trakt app credentials are user-supplied in Settings; there are no usable built-in values.
     private suspend fun clientId(): String =
         settingsDataStore.traktApiKey.first().trim()
@@ -45,6 +45,9 @@ class TraktRepository(
 
     val traktUsername: Flow<String?> = settingsDataStore.traktUsername
     val traktAccessToken: Flow<String?> = settingsDataStore.traktAccessToken
+
+    // TrackingRepository identity; backed by the same DataStore key as traktUsername.
+    override val username: Flow<String?> = settingsDataStore.traktUsername
 
     // Device-flow polling must outlive the composition that started it.
     private val authScope = CoroutineScope(SupervisorJob() + Dispatchers.IO)
@@ -140,7 +143,7 @@ class TraktRepository(
     }
 
     // Pull Trakt Watchlist into local Room database
-    suspend fun syncWatchlist() {
+    override suspend fun syncWatchlist() {
         val token = traktAccessToken.firstOrNull()
         if (token.isNullOrBlank() || watchlistDao == null) return
 
@@ -177,7 +180,7 @@ class TraktRepository(
     }
 
     // Sync local MyList addition/removal to Trakt
-    suspend fun syncWatchlistToTrakt(item: MediaItem, isAdd: Boolean) {
+    override suspend fun syncWatchlistItem(item: MediaItem, isAdd: Boolean) {
         val token = traktAccessToken.firstOrNull()
         if (token.isNullOrBlank()) return
 
@@ -211,7 +214,7 @@ class TraktRepository(
      * zero position and duration (percent unknown) instead of seeking users to a
      * fabricated timestamp.
      */
-    suspend fun syncPlayback() {
+    override suspend fun syncPlayback() {
         val token = traktAccessToken.firstOrNull()
         if (token.isNullOrBlank() || watchProgressDao == null) return
 
@@ -259,33 +262,64 @@ class TraktRepository(
         }
     }
 
-    // Scrobble watch progress to Trakt
-    suspend fun scrobbleProgressToTrakt(
+    // An episode scrobble needs the parent show plus season/number; sending the
+    // show ids as the episode is rejected by Trakt, so a show scrobble with no
+    // season/episode is dropped rather than sent.
+    private fun scrobbleBody(
         tmdbId: Int,
         mediaType: String,
         progressPct: Float,
-        season: Int? = null,
-        episode: Int? = null
+        season: Int?,
+        episode: Int?
+    ): TraktScrobbleRequest? = if (mediaType == "tv") {
+        if (season == null || episode == null) {
+            null
+        } else {
+            TraktScrobbleRequest(
+                show = TraktMediaItem(ids = TraktIds(tmdb = tmdbId)),
+                episode = TraktEpisode(season = season, number = episode),
+                progress = progressPct
+            )
+        }
+    } else {
+        TraktScrobbleRequest(
+            movie = TraktMediaItem(ids = TraktIds(tmdb = tmdbId)),
+            progress = progressPct
+        )
+    }
+
+    // "start" is the heartbeat: re-post it every 30-60s while playback runs.
+    override suspend fun scrobbleStart(
+        tmdbId: Int,
+        mediaType: String,
+        progressPct: Float,
+        season: Int?,
+        episode: Int?
     ) {
         val token = traktAccessToken.firstOrNull()
         if (token.isNullOrBlank()) return
+        val req = scrobbleBody(tmdbId, mediaType, progressPct, season, episode) ?: return
 
         try {
-            val req = if (mediaType == "tv") {
-                // An episode scrobble needs the parent show plus season/number;
-                // sending the show ids as the episode is rejected by Trakt.
-                if (season == null || episode == null) return
-                TraktScrobbleRequest(
-                    show = TraktMediaItem(ids = TraktIds(tmdb = tmdbId)),
-                    episode = TraktEpisode(season = season, number = episode),
-                    progress = progressPct
-                )
-            } else {
-                TraktScrobbleRequest(
-                    movie = TraktMediaItem(ids = TraktIds(tmdb = tmdbId)),
-                    progress = progressPct
-                )
-            }
+            ApiClient.traktApi.scrobbleStart("Bearer $token", clientId(), req)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    // Scrobble watch progress to Trakt
+    override suspend fun scrobbleProgress(
+        tmdbId: Int,
+        mediaType: String,
+        progressPct: Float,
+        season: Int?,
+        episode: Int?
+    ) {
+        val token = traktAccessToken.firstOrNull()
+        if (token.isNullOrBlank()) return
+        val req = scrobbleBody(tmdbId, mediaType, progressPct, season, episode) ?: return
+
+        try {
             ApiClient.traktApi.scrobblePause(
                 "Bearer $token",
                 clientId(),
@@ -296,7 +330,27 @@ class TraktRepository(
         }
     }
 
-    suspend fun disconnectTrakt() {
+    // "stop" decides the outcome: >=90% with enough runtime marks it watched,
+    // below that it leaves a partial resume point.
+    override suspend fun scrobbleStop(
+        tmdbId: Int,
+        mediaType: String,
+        progressPct: Float,
+        season: Int?,
+        episode: Int?
+    ) {
+        val token = traktAccessToken.firstOrNull()
+        if (token.isNullOrBlank()) return
+        val req = scrobbleBody(tmdbId, mediaType, progressPct, season, episode) ?: return
+
+        try {
+            ApiClient.traktApi.scrobbleStop("Bearer $token", clientId(), req)
+        } catch (e: Exception) {
+            e.printStackTrace()
+        }
+    }
+
+    override suspend fun disconnect() {
         settingsDataStore.clearTraktAuth()
     }
 }

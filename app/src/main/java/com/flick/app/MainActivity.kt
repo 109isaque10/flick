@@ -39,8 +39,10 @@ import com.flick.app.data.model.EpisodeModel
 import com.flick.app.data.model.MediaItem
 import com.flick.app.data.model.SeasonModel
 import com.flick.app.data.model.StremioStream
+import com.flick.app.data.repository.FlickListRepository
 import com.flick.app.data.repository.MediaRepository
 import com.flick.app.data.repository.StremioRepository
+import com.flick.app.data.repository.TrackingRepository
 import com.flick.app.data.repository.TraktRepository
 import com.flick.app.ui.categories.CategoriesScreen
 import com.flick.app.ui.categories.GenreItem
@@ -68,6 +70,22 @@ import kotlinx.coroutines.launch
 /** Poster grid cap for TV search; the extra rows were never reachable by D-pad. */
 private const val SEARCH_RESULT_LIMIT = 15
 
+/**
+ * Non-observable holder for the in-flight tracking scrobble session. Plain
+ * fields on purpose: a Compose-state write on every progress tick would
+ * recompose the whole app once a second.
+ */
+private class ScrobbleSession {
+    var key: String? = null
+    var active: Boolean = false
+    var tmdbId: Int = 0
+    var mediaType: String = "movie"
+    var season: Int? = null
+    var episode: Int? = null
+    var lastProgressPct: Float = 0f
+    var lastHeartbeatMs: Long = 0L
+}
+
 class MainActivity : ComponentActivity() {
 
     private lateinit var db: FlickDatabase
@@ -75,6 +93,7 @@ class MainActivity : ComponentActivity() {
     private lateinit var mediaRepository: MediaRepository
     private lateinit var stremioRepository: StremioRepository
     private lateinit var traktRepository: TraktRepository
+    private lateinit var flickListRepository: FlickListRepository
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -102,6 +121,11 @@ class MainActivity : ComponentActivity() {
             watchlistDao = db.watchlistDao(),
             watchProgressDao = db.watchProgressDao()
         )
+        flickListRepository = FlickListRepository(
+            settingsDataStore = settingsDataStore,
+            watchlistDao = db.watchlistDao(),
+            watchProgressDao = db.watchProgressDao()
+        )
 
         setContent {
             FlickTheme {
@@ -109,6 +133,7 @@ class MainActivity : ComponentActivity() {
                     mediaRepository = mediaRepository,
                     stremioRepository = stremioRepository,
                     traktRepository = traktRepository,
+                    flickListRepository = flickListRepository,
                     settingsDataStore = settingsDataStore
                 )
             }
@@ -121,6 +146,7 @@ fun MainAppEntry(
     mediaRepository: MediaRepository,
     stremioRepository: StremioRepository,
     traktRepository: TraktRepository,
+    flickListRepository: FlickListRepository,
     settingsDataStore: SettingsDataStore
 ) {
     var showSplash by remember { mutableStateOf(true) }
@@ -130,6 +156,7 @@ fun MainAppEntry(
             mediaRepository = mediaRepository,
             stremioRepository = stremioRepository,
             traktRepository = traktRepository,
+            flickListRepository = flickListRepository,
             settingsDataStore = settingsDataStore
         )
 
@@ -144,6 +171,7 @@ fun MainAppContent(
     mediaRepository: MediaRepository,
     stremioRepository: StremioRepository,
     traktRepository: TraktRepository,
+    flickListRepository: FlickListRepository,
     settingsDataStore: SettingsDataStore
 ) {
     val coroutineScope = rememberCoroutineScope()
@@ -266,11 +294,42 @@ fun MainAppContent(
     val traktApiKey by settingsDataStore.traktApiKey.collectAsState(initial = "")
     val traktClientSecret by settingsDataStore.traktClientSecret.collectAsState(initial = "")
     val traktUsername by traktRepository.traktUsername.collectAsState(initial = null)
+    val trackingBackend by settingsDataStore.trackingBackend.collectAsState(initial = "TRAKT")
+    val flickListClientId by settingsDataStore.flickListClientId.collectAsState(initial = "")
+    val flickListApiKey by settingsDataStore.flickListApiKey.collectAsState(initial = "")
+    val flickListUsername by flickListRepository.username.collectAsState(initial = null)
     val savedWatchlist by mediaRepository.getWatchlistItems().collectAsState(initial = emptyList())
     val searchHistory by settingsDataStore.searchHistory.collectAsState(initial = emptyList())
 
     var traktDeviceCode by remember { mutableStateOf<String?>(null) }
     var traktVerificationUrl by remember { mutableStateOf<String?>(null) }
+    var flickListDeviceCode by remember { mutableStateOf<String?>(null) }
+    var flickListVerificationUrl by remember { mutableStateOf<String?>(null) }
+
+    // Every watchlist/reconcile/scrobble call goes through whichever backend the
+    // viewer picked in Settings, so the rest of the app never branches on it.
+    val activeTracking: TrackingRepository =
+        if (trackingBackend == "FLICKLIST") flickListRepository else traktRepository
+
+    val scrobbleSession = remember { ScrobbleSession() }
+
+    // Closes the in-flight scrobble session exactly once, using the identity
+    // captured when it opened. Snapshotting first matters: the progress tick
+    // that fires when the player is disposed can already carry the next
+    // episode, and must not be allowed to relabel the closing position.
+    val stopScrobbleSession: () -> Unit = {
+        if (scrobbleSession.active) {
+            scrobbleSession.active = false
+            val tmdbId = scrobbleSession.tmdbId
+            val mediaType = scrobbleSession.mediaType
+            val progressPct = scrobbleSession.lastProgressPct
+            val season = scrobbleSession.season
+            val episode = scrobbleSession.episode
+            coroutineScope.launch {
+                activeTracking.scrobbleStop(tmdbId, mediaType, progressPct, season, episode)
+            }
+        }
+    }
 
     var smartNextSeason by remember { mutableStateOf<Int?>(null) }
     var smartNextEpisode by remember { mutableStateOf<Int?>(null) }
@@ -555,6 +614,7 @@ fun MainAppContent(
                 nextEpisodeStillUrl = nextEpisodeToPrefetch?.fullStillUrl,
                 initialPositionMs = activePlayingInitialPositionMs,
                 onBack = {
+                    stopScrobbleSession()
                     activeStreamUrl = null
                     activePlayingItem = null
                     activePlayingSeason = null
@@ -571,6 +631,7 @@ fun MainAppContent(
                 completionThreshold = completionThreshold,
                 onSelectEpisode = { s, e ->
                     (activePlayingItem ?: selectedMediaItem)?.let { item ->
+                        stopScrobbleSession()
                         playMediaStream(item, s, e)
                     }
                 },
@@ -603,14 +664,56 @@ fun MainAppContent(
                             )
                             if (durMs > 0) {
                                 val progressPct = (posMs.toFloat() / durMs.toFloat()) * 100f
-                                traktRepository.scrobbleProgressToTrakt(
-                                    tmdbId = item.id,
-                                    mediaType = item.mediaType,
-                                    progressPct = progressPct,
-                                    season = seasonNum,
-                                    episode = episodeNum
-                                )
+                                val sessionKey = "${item.mediaType}_${item.id}_${seasonNum ?: 0}_${episodeNum ?: 0}"
+                                val nowMs = System.currentTimeMillis()
+
+                                scrobbleSession.lastProgressPct = progressPct
+
+                                // "start" opens the session and doubles as the
+                                // heartbeat: re-post it at most every 30s so an
+                                // abandoned session expires on the backend.
+                                if (!scrobbleSession.active || scrobbleSession.key != sessionKey) {
+                                    scrobbleSession.key = sessionKey
+                                    scrobbleSession.active = true
+                                    scrobbleSession.tmdbId = item.id
+                                    scrobbleSession.mediaType = item.mediaType
+                                    scrobbleSession.season = seasonNum
+                                    scrobbleSession.episode = episodeNum
+                                    scrobbleSession.lastHeartbeatMs = nowMs
+                                    activeTracking.scrobbleStart(
+                                        tmdbId = item.id,
+                                        mediaType = item.mediaType,
+                                        progressPct = progressPct,
+                                        season = seasonNum,
+                                        episode = episodeNum
+                                    )
+                                } else if (nowMs - scrobbleSession.lastHeartbeatMs >= 30_000L) {
+                                    scrobbleSession.lastHeartbeatMs = nowMs
+                                    activeTracking.scrobbleStart(
+                                        tmdbId = item.id,
+                                        mediaType = item.mediaType,
+                                        progressPct = progressPct,
+                                        season = seasonNum,
+                                        episode = episodeNum
+                                    )
+                                }
                             }
+                        }
+                    }
+                },
+                onIsPlayingChanged = { playing ->
+                    if (playing) {
+                        // Resuming: let the next tick re-post "start" at once
+                        // instead of waiting out the heartbeat interval.
+                        scrobbleSession.lastHeartbeatMs = 0L
+                    } else if (scrobbleSession.active) {
+                        val tmdbId = scrobbleSession.tmdbId
+                        val mediaType = scrobbleSession.mediaType
+                        val progressPct = scrobbleSession.lastProgressPct
+                        val season = scrobbleSession.season
+                        val episode = scrobbleSession.episode
+                        coroutineScope.launch {
+                            activeTracking.scrobbleProgress(tmdbId, mediaType, progressPct, season, episode)
                         }
                     }
                 },
@@ -630,6 +733,7 @@ fun MainAppContent(
                 },
                 onPlayNextEpisode = { ep ->
                     (activePlayingItem ?: selectedMediaItem)?.let { item ->
+                        stopScrobbleSession()
                         playMediaStream(item, ep.seasonNumber, ep.episodeNumber, autoPlayDirectly = true)
                     }
                 }
@@ -687,7 +791,7 @@ fun MainAppContent(
                 },
                 onToggleWatchlist = {
                     selectedMediaItem?.let { item ->
-                        coroutineScope.launch { mediaRepository.toggleWatchlist(item, traktRepository) }
+                        coroutineScope.launch { mediaRepository.toggleWatchlist(item, activeTracking) }
                     }
                 },
                 onBack = { selectedMediaItem = null }
@@ -904,7 +1008,40 @@ fun MainAppContent(
                                 }
                             },
                             onDisconnectTrakt = {
-                                coroutineScope.launch { traktRepository.disconnectTrakt() }
+                                coroutineScope.launch { traktRepository.disconnect() }
+                            },
+                            trackingBackend = trackingBackend,
+                            onSelectTrackingBackend = { backend ->
+                                coroutineScope.launch { settingsDataStore.setTrackingBackend(backend) }
+                            },
+                            flickListClientId = flickListClientId,
+                            onSaveFlickListClientId = { id ->
+                                coroutineScope.launch { settingsDataStore.saveFlickListClientId(id) }
+                            },
+                            flickListApiKey = flickListApiKey,
+                            onSaveFlickListApiKey = { key ->
+                                coroutineScope.launch { flickListRepository.connectWithApiKey(key) }
+                            },
+                            flickListUsername = flickListUsername,
+                            flickListDeviceCode = flickListDeviceCode,
+                            flickListVerificationUrl = flickListVerificationUrl,
+                            onRequestFlickListPairing = {
+                                coroutineScope.launch {
+                                    val res = flickListRepository.requestDeviceCode()
+                                    flickListDeviceCode = res?.userCode
+                                    flickListVerificationUrl = res?.verificationUri
+                                    val deviceCode = res?.deviceCode
+                                    if (deviceCode != null) {
+                                        // Poll until the user approves (or the code expires).
+                                        flickListRepository.startDeviceAuthPolling(
+                                            deviceCode = deviceCode,
+                                            intervalSeconds = res.interval ?: 5
+                                        )
+                                    }
+                                }
+                            },
+                            onDisconnectFlickList = {
+                                coroutineScope.launch { flickListRepository.disconnect() }
                             }
                         )
                     }
