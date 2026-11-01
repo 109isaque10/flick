@@ -1,0 +1,177 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Flick</string>
+    <string name="app_wordmark">NETFLIX</string>
+
+    <!-- Navigation & Bottom/Side Rail -->
+    <string name="nav_home">Início</string>
+    <string name="nav_search">Pesquisar</string>
+    <string name="nav_tv_shows">Séries</string>
+    <string name="nav_movies">Filmes</string>
+    <string name="nav_categories">Categorias</string>
+    <string name="nav_my_list">Minha Lista</string>
+    <string name="nav_settings">Configurações</string>
+
+    <!-- Actions & Buttons -->
+    <string name="action_play">Reproduzir</string>
+    <string name="action_more_info">Mais Informações</string>
+    <string name="action_my_list">Minha Lista</string>
+    <string name="action_in_list">Na Minha Lista</string>
+    <string name="action_resume">Continuar</string>
+    <string name="action_resume_episode_format">Continuar T%1$d: Ep. %2$d</string>
+    <string name="action_connect">Conectar</string>
+    <string name="action_disconnect">Desconectar</string>
+    <string name="action_add">Adicionar</string>
+    <string name="action_remove">Remover</string>
+    <string name="action_back">Voltar</string>
+    <string name="action_play_next">Reproduzir Próximo Episódio</string>
+    <string name="action_rewind_10s">Retroceder 10s</string>
+    <string name="action_forward_10s">Avançar 10s</string>
+    <string name="action_pause">Pausar</string>
+    <string name="action_search">Pesquisar</string>
+    <string name="action_retry">Tentar Novamente</string>
+
+    <!-- Hero & Content Labels -->
+    <string name="label_series">SÉRIE</string>
+    <string name="label_film">FILME</string>
+    <string name="label_match">%1$d%% de compatibilidade</string>
+    <string name="label_rating">Nota: %1$.1f/10</string>
+    <string name="label_ultra_hd">4K Ultra HD</string>
+    <string name="label_hd">HD</string>
+
+    <!-- Content Row Titles -->
+    <string name="row_trending">Em Alta</string>
+    <string name="row_continue_watching">Continuar Assistindo</string>
+    <string name="row_my_list">Minha Lista</string>
+    <string name="row_popular_movies">Filmes Populares</string>
+    <string name="row_top_tv">Séries Mais Bem Avaliadas</string>
+    <string name="row_action">Ação e Aventura</string>
+    <string name="row_scifi">Ficção Científica e Fantasia</string>
+    <string name="row_similar">Mais Como Este</string>
+
+    <!-- Details Screen -->
+    <string name="title_episodes">Episódios</string>
+    <string name="title_seasons">Temporadas</string>
+    <string name="title_cast">Elenco Principal</string>
+    <string name="title_streams">Streams Disponíveis</string>
+    <string name="select_stream_title">Selecionar Stream</string>
+    <string name="streams_available_count_format">%1$d streams disponíveis no addon Stremio:</string>
+    <string name="no_streams_hint">Verifique o URL do Addon Stremio nas Definições ou insira um URL de stream personalizado abaixo.</string>
+    <string name="custom_stream_label">Stream personalizado</string>
+    <string name="custom_stream_placeholder">https://... ou magnet:</string>
+    <string name="play_custom_url">Reproduzir URL Personalizado</string>
+    <string name="open_settings">Abrir Definições</string>
+    <string name="season_format">Temporada %1$d</string>
+    <string name="episode_format">E%1$d: %2$s</string>
+    <string name="episode_simple">Episódio %1$d</string>
+    <string name="season_episodes_header_format">%1$s - Episódios</string>
+    <string name="filter_tv_shows">Séries</string>
+    <string name="filter_movies">Filmes</string>
+    <string name="searching_addon_streams">Procurando streams no Stremio...</string>
+    <string name="no_streams_found">Nenhum stream encontrado nos addons ativos.</string>
+    <string name="cast_as_character">%1$s como %2$s</string>
+
+    <!-- Player Screen -->
+    <string name="up_next_countdown">A SEGUIR EM %1$d</string>
+    <string name="starting_in_seconds">Começando em %1$d segundos</string>
+    <string name="starting_in_one_second">Começando em 1 segundo</string>
+    <string name="episode_short_format">T%1$d:E%2$d - %3$s</string>
+    <string name="player_error_title">Erro de reprodução</string>
+    <string name="player_stream_error">Não foi possível reproduzir este stream.</string>
+    <string name="next_episode_soon">O próximo episódio começa em breve.</string>
+    <string name="audio_track_number_format">Faixa de Áudio %1$d</string>
+    <string name="subtitle_track_number_format">Legenda %1$d</string>
+
+    <!-- Search Screen -->
+    <string name="search_hint">Pesquise filmes, séries ou gêneros...</string>
+    <string name="search_no_results">Nenhum conteúdo encontrado para \'%1$s\'</string>
+    <string name="search_empty_prompt">Pesquise seus filmes e séries favoritos</string>
+    <string name="search_recent_header">Pesquisas recentes</string>
+
+    <!-- Categories Screen -->
+    <string name="categories_title">Navegar por Categorias</string>
+
+    <!-- Settings Screen -->
+    <string name="settings_title">Configurações</string>
+    <string name="trakt_account_title">Sincronização da Conta Trakt.tv</string>
+    <string name="trakt_connected_status">Conectado como %1$s</string>
+    <string name="trakt_disconnected_status">Não conectado. Conecte o Trakt para sincronizar sua lista e o histórico de reprodução.</string>
+    <string name="stremio_addons_title">Addons do Stremio</string>
+    <string name="stremio_addons_subtitle">Gerencie torrents e provedores de stream</string>
+    <string name="stremio_addon_url_hint">URL do manifesto (https://.../manifest.json)</string>
+    <string name="installed_addons_count">Addons Instalados (%1$d)</string>
+    <string name="subtitle_lang_title">Idioma das Legendas</string>
+    <string name="stream_quality_title">Qualidade de Stream Preferida</string>
+    <string name="app_build_info">Flick v1.0.0 (Netflix Engine 2020)</string>
+
+    <!-- Splash Screen -->
+    <string name="splash_tagline">FILMES E SÉRIES SEM LIMITES</string>
+    <string name="close">Fechar</string>
+    <string name="action_cancel">Cancelar</string>
+    <string name="accessibility_selected">Selecionado</string>
+
+    <!-- TV & Sidebar Dynamic Strings -->
+    <string name="user_profile_master">Usuário principal</string>
+    <string name="user_profile_switch">Trocar Perfis</string>
+    <string name="nav_reload">Recarregar</string>
+    <string name="nav_new_popular">Novidades e Populares</string>
+    <string name="nav_surprise_me">Surpreenda-me</string>
+    <string name="nav_more">Mais</string>
+    <string name="categories_empty">Ainda não há títulos nesta categoria.</string>
+    <string name="action_start_over">Começar do Início</string>
+    <string name="action_more_episodes">Mais Episódios</string>
+    <string name="action_trailers_more">Trailers e Mais</string>
+    <string name="search_empty_hint_tv">Pesquise por Título, Gênero, Ator, Diretor, País, Estúdio ou Ano</string>
+    <string name="search_popular_searches">Pesquisas Populares</string>
+    <string name="search_space">Espaço</string>
+    <string name="search_clear">Limpar</string>
+    <string name="search_press_up">Pressione CIMA para o teclado completo</string>
+    <string name="badge_n_series">SÉRIE N</string>
+    <string name="badge_top_10">TOP 10</string>
+    <string name="badge_top_250">TOP 250</string>
+    <string name="badge_new_episodes">Novos Episódios</string>
+    <string name="label_dolby">5.1 Dolby</string>
+    <string name="tmdb_key_required_title">Chave de API do TMDB Necessária</string>
+    <string name="tmdb_key_required_desc">O Flick foi feito para usuários avançados. Insira sua chave de API pessoal do TMDB nas Configurações para carregar filmes, séries e imagens.</string>
+    <string name="btn_go_to_settings">Ir para Configurações</string>
+    <string name="loading_seasons">Carregando temporadas...</string>
+    <string name="episodes_count_format">%1$d episódios</string>
+    <string name="seasons_count_format">%1$d Temporadas</string>
+    <string name="action_play_from_beginning">Reproduzir do início</string>
+    <string name="action_play_trailer">Reproduzir trailer</string>
+    <string name="action_next_episode">Próximo Episódio</string>
+    <string name="action_speed">Velocidade (%1$s)</string>
+    <string name="action_audio_subtitles">Áudio e Legendas</string>
+    <string name="detail_cast_prefix">Elenco: %1$s</string>
+    <string name="detail_creators_prefix">Criadores: %1$s</string>
+    <string name="label_trailer">Trailer</string>
+    <string name="detail_directors_prefix">Diretores: %1$s</string>
+    <string name="detail_genres_prefix">Gêneros: %1$s</string>
+    <string name="detail_subtitles_prefix">Legendas: %1$s</string>
+    <string name="detail_audio_prefix">Idioma do Áudio: %1$s</string>
+    <string name="detail_awards_prefix">Prêmios: %1$s</string>
+    <string name="detail_ratings_prefix">Notas: %1$s</string>
+    <string name="badge_ultra_hd">Ultra HD 4K</string>
+    <string name="badge_surround_51">5.1</string>
+    <string name="badge_dolby_sound">DOLBY</string>
+    <string name="badge_tv_14">TV-14</string>
+    <string name="badge_tv_ma">TV-MA</string>
+    <string name="badge_pg_13">PG-13</string>
+    <string name="badge_fox">FOX</string>
+    <string name="badge_netflix">NETFLIX</string>
+    <string name="row_bingeworthy">Séries para Maratonar</string>
+    <string name="audio_track_title">Áudio</string>
+    <string name="subtitle_track_title">Legendas</string>
+    <string name="track_off">Desativado</string>
+    <string name="action_apply">Aplicar</string>
+    <string name="episodes_and_info">Episódios e Informações</string>
+    <string name="loading_episodes">Carregando episódios...</string>
+    <string name="playing_now">REPRODUZINDO AGORA</string>
+    <string name="duration_minutes_format">(%1$dm)</string>
+    <string name="duration_minutes_short_format">%1$dm</string>
+    <string name="settings_language_value_format">Idioma: %1$s</string>
+    <string name="settings_country_value_format">País: %1$s</string>
+    <string name="settings_trakt_step_visit_format">1. Acesse: %1$s</string>
+    <string name="settings_trakt_step_code_format">2. Insira o Código: %1$s</string>
+    <string name="season_episode_tag_format">T%1$d: E%2$d</string>
+</resources>

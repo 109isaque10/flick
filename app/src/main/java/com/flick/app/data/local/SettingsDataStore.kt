@@ -35,6 +35,11 @@ class SettingsDataStore(private val context: Context) {
         val KEY_TRAKT_REFRESH_TOKEN = stringPreferencesKey("trakt_refresh_token")
         val KEY_TRAKT_USERNAME = stringPreferencesKey("trakt_username")
         val KEY_AUTO_PLAY = booleanPreferencesKey("auto_play")
+        val KEY_SEARCH_HISTORY = stringPreferencesKey("search_history")
+
+        // Newline-joined, most-recent-first. Capped so the rail never grows
+        // past what the 10-foot layout can show.
+        private const val SEARCH_HISTORY_LIMIT = 8
     }
 
     val tmdbApiKey: Flow<String> = context.dataStore.data.map { prefs ->
@@ -108,6 +113,10 @@ class SettingsDataStore(private val context: Context) {
 
     val autoPlayEnabled: Flow<Boolean> = context.dataStore.data.map { prefs ->
         prefs[KEY_AUTO_PLAY] ?: true
+    }
+
+    val searchHistory: Flow<List<String>> = context.dataStore.data.map { prefs ->
+        decodeSearchHistory(prefs[KEY_SEARCH_HISTORY])
     }
 
     suspend fun saveTmdbApiKey(key: String) {
@@ -203,4 +212,26 @@ class SettingsDataStore(private val context: Context) {
             prefs.remove(KEY_TRAKT_USERNAME)
         }
     }
+
+    /**
+     * Records a query at the head of the history, de-duplicating
+     * case-insensitively and trimming to [SEARCH_HISTORY_LIMIT]. Called when a
+     * search result is opened, not on every keystroke.
+     */
+    suspend fun addSearchHistory(query: String) {
+        val trimmed = query.trim()
+        if (trimmed.isEmpty()) return
+        context.dataStore.edit { prefs ->
+            val current = decodeSearchHistory(prefs[KEY_SEARCH_HISTORY])
+            val updated = (listOf(trimmed) + current.filterNot { it.equals(trimmed, ignoreCase = true) })
+                .take(SEARCH_HISTORY_LIMIT)
+            prefs[KEY_SEARCH_HISTORY] = updated.joinToString("\n")
+        }
+    }
+
+    private fun decodeSearchHistory(raw: String?): List<String> =
+        raw?.split("\n")
+            ?.map { it.trim() }
+            ?.filter { it.isNotEmpty() }
+            ?: emptyList()
 }

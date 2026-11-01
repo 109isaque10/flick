@@ -1,6 +1,5 @@
 package com.flick.app.ui.navigation
 
-import android.app.Activity
 import androidx.annotation.StringRes
 import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.interaction.collectIsFocusedAsState
@@ -33,7 +32,6 @@ import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.List
 import androidx.compose.material.icons.filled.Menu
 import androidx.compose.material.icons.filled.Movie
-import androidx.compose.material.icons.filled.Refresh
 import androidx.compose.material.icons.filled.Search
 import androidx.compose.material.icons.filled.Settings
 import androidx.compose.material.icons.filled.TrendingUp
@@ -52,14 +50,12 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
-import kotlinx.coroutines.delay
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.ExperimentalComposeUiApi
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.clipToBounds
 import androidx.compose.ui.focus.FocusRequester
-import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -69,7 +65,6 @@ import androidx.compose.ui.input.key.type
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
@@ -189,7 +184,6 @@ private fun RailItem(
 fun FlickNavRail(
     currentDestination: NavDestination,
     onDestinationSelected: (NavDestination) -> Unit,
-    onReloadRequested: () -> Unit = {},
     modifier: Modifier = Modifier
 ) {
     var railHasFocus by remember { mutableStateOf(false) }
@@ -218,12 +212,11 @@ fun FlickNavRail(
         animationSpec = tween(durationMillis = 180),
         label = "railWidth"
     )
-    val context = LocalContext.current
-
+    // Netflix's 10-foot rail leads with Search, not Home.
     val destinations = remember {
         listOf(
-            NavDestination.HOME,
             NavDestination.SEARCH,
+            NavDestination.HOME,
             NavDestination.NEW_POPULAR,
             NavDestination.TV_SHOWS,
             NavDestination.MOVIES,
@@ -232,7 +225,7 @@ fun FlickNavRail(
         )
     }
 
-    val focusRequesters = remember { List(destinations.size + 2) { FocusRequester() } }
+    val focusRequesters = remember { List(destinations.size + 1) { FocusRequester() } }
 
     // Re-entering the rail must land on the current section, not on whichever
     // item happens to sit geometrically closest to the row the viewer left from
@@ -365,66 +358,11 @@ fun FlickNavRail(
                         .focusRequester(focusRequesters[destinations.size])
                         .focusProperties {
                             up = focusRequesters[destinations.lastIndex]
-                            down = focusRequesters[destinations.size + 1]
-                        }
-                )
-
-                val reloadInteraction = remember { MutableInteractionSource() }
-                val reloadFocused by reloadInteraction.collectIsFocusedAsState()
-                val reloadContentColor = if (reloadFocused) NetflixBlack else NetflixLightGray
-
-                val reloadAction: () -> Unit = {
-                    onReloadRequested()
-                    (context as? Activity)?.recreate()
-                }
-                Surface(
-                    onClick = reloadAction,
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .height(NetflixDimens.RailItemHeight)
-                        .padding(vertical = 2.dp)
-                        .focusRequester(focusRequesters[destinations.size + 1])
-                        .focusProperties {
-                            up = focusRequesters[destinations.size]
+                            // Settings is the last focusable row in the rail; the
+                            // Reload row that used to sit below it is gone.
                             down = FocusRequester.Cancel
                         }
-                        .touchClickable(onClick = reloadAction),
-                    shape = ClickableSurfaceDefaults.shape(shape = RoundedCornerShape(4.dp)),
-                    colors = ClickableSurfaceDefaults.colors(
-                        containerColor = Color.Transparent,
-                        contentColor = reloadContentColor,
-                        focusedContainerColor = NetflixWhite,
-                        focusedContentColor = NetflixBlack
-                    ),
-                    scale = ClickableSurfaceDefaults.scale(focusedScale = 1f),
-                    interactionSource = reloadInteraction
-                ) {
-                    Row(
-                        modifier = Modifier
-                            .fillMaxSize()
-                            .padding(horizontal = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        Box(modifier = Modifier.width(3.dp))
-                        Spacer(modifier = Modifier.width(if (isRailFocused) 14.dp else 11.dp))
-                        Icon(
-                            imageVector = Icons.Default.Refresh,
-                            contentDescription = stringResource(R.string.nav_reload),
-                            tint = reloadContentColor,
-                            modifier = Modifier.size(22.dp)
-                        )
-                        if (isRailFocused) {
-                            Spacer(modifier = Modifier.width(14.dp))
-                            Text(
-                                text = stringResource(R.string.nav_reload),
-                                color = reloadContentColor,
-                                fontSize = 14.sp,
-                                fontWeight = FontWeight.Medium,
-                                maxLines = 1
-                            )
-                        }
-                    }
-                }
+                )
             }
         }
     }

@@ -52,7 +52,7 @@ import androidx.compose.ui.unit.sp
 import com.flick.app.R
 import com.flick.app.data.model.MediaItem
 import com.flick.app.ui.components.TvSpinner
-import com.flick.app.ui.home.PosterCard
+import com.flick.app.ui.components.NetflixCleanPosterCard
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.theme.NetflixBorderHighlight
 import com.flick.app.ui.theme.NetflixCardSurface
@@ -159,7 +159,7 @@ fun CategoriesScreen(
                     itemsIndexed(
                         distinctCategoryItems,
                         key = { _, item -> "${item.mediaType}_${item.id}" }) { _, item ->
-                        PosterCard(item = item, onClick = { onMediaSelected(item) }, cardWidth = null)
+                        NetflixCleanPosterCard(posterUrl = item.fullPosterUrl, title = item.title, onClick = { onMediaSelected(item) }, posterWidth = null)
                     }
                 }
             }
@@ -312,7 +312,7 @@ fun CategoriesScreen(
                         itemsIndexed(
                             distinctCategoryItems,
                             key = { _, item -> "${item.mediaType}_${item.id}" }) { _, item ->
-                            PosterCard(item = item, onClick = { onMediaSelected(item) }, cardWidth = null)
+                            NetflixCleanPosterCard(posterUrl = item.fullPosterUrl, title = item.title, onClick = { onMediaSelected(item) }, posterWidth = null)
                         }
                     }
                 }

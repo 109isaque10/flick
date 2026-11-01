@@ -24,3 +24,13 @@ data class StremioBehaviorHints(
     @Json(name = "bingeGroup") val bingeGroup: String? = null,
     @Json(name = "filename") val filename: String? = null
 )
+
+/**
+ * Debrid/stream provider encoded in [StremioBehaviorHints.bingeGroup] as its first `|`-separated
+ * segment, e.g. `"Torbox|Movie"` -> `"Torbox"`. Null when there is no usable provider segment.
+ */
+val StremioStream.providerName: String?
+    get() = behaviorHints?.bingeGroup
+        ?.substringBefore('|')
+        ?.trim()
+        ?.takeIf { it.isNotEmpty() }

@@ -5,20 +5,16 @@
 
 package com.flick.app.ui.home
 
-import androidx.compose.animation.core.animateFloatAsState
-import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -58,7 +54,6 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
@@ -75,6 +70,10 @@ import com.flick.app.ui.components.touchClickable
 import com.flick.app.data.model.ContentRow
 import com.flick.app.data.model.MediaItem
 import com.flick.app.data.model.SpotlightType
+import com.flick.app.ui.components.MobileHeroActionButton
+import com.flick.app.ui.components.MobilePrimaryButton
+import com.flick.app.ui.components.NetflixPosterCard
+import com.flick.app.ui.components.railFullBleed
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.theme.NetflixBorderHighlight
 import com.flick.app.ui.theme.NetflixCardSurface
@@ -93,7 +92,6 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusProperties
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.focusRestorer
-import androidx.compose.ui.focus.focusTarget
 import androidx.compose.ui.input.key.Key
 import androidx.compose.ui.input.key.KeyEventType
 import androidx.compose.ui.input.key.key
@@ -432,48 +430,314 @@ fun HeroSection(
         AsyncImage(
             model = item.fullBackdropUrl ?: item.fullPosterUrl,
             contentDescription = item.title,
-            modifier = Modifier.fillMaxSize(),
+            // On TV the billboard runs under the navigation rail; on mobile it
+            // simply fills the section.
+            modifier = if (isPhone) {
+                Modifier.fillMaxSize()
+            } else {
+                Modifier.fillMaxSize().railFullBleed()
+            },
             contentScale = ContentScale.Crop
         )
 
-        // Dark gradients overlay (top, bottom, left)
+        if (isPhone) {
+            PhoneHeroContent(
+                item = item,
+                onPlayClicked = onPlayClicked,
+                onInfoClicked = onInfoClicked,
+                modifier = Modifier.fillMaxSize()
+            )
+        } else {
+            // Dark gradients overlay (top, bottom, left). They are full-bleed
+            // with the artwork so the composite stays continuous where it runs
+            // under the rail.
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .railFullBleed()
+                    .background(
+                        Brush.verticalGradient(
+                            colors = listOf(
+                                Color.Transparent,
+                                NetflixBlack.copy(alpha = 0.5f),
+                                NetflixBlack
+                            ),
+                            startY = 100f
+                        )
+                    )
+            )
+
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .railFullBleed()
+                    .background(
+                        Brush.horizontalGradient(
+                            colors = listOf(
+                                NetflixBlack.copy(alpha = 0.9f),
+                                NetflixBlack.copy(alpha = 0.4f),
+                                Color.Transparent
+                            ),
+                            endX = 800f
+                        )
+                    )
+            )
+
+            Column(
+                modifier = Modifier
+                    .align(Alignment.BottomStart)
+                    .padding(start = startPadding, bottom = 18.dp, end = endPadding),
+                verticalArrangement = Arrangement.Bottom
+            ) {
+                // "N SERIES" eyebrow, exactly where Netflix puts it: above the logo.
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Image(
+                        painter = painterResource(R.drawable.logo_flick),
+                        contentDescription = null,
+                        modifier = Modifier.size(20.dp)
+                    )
+                    Spacer(modifier = Modifier.width(6.dp))
+                    Text(
+                        text = if (item.mediaType == "tv") {
+                            stringResource(R.string.label_series)
+                        } else {
+                            stringResource(R.string.label_film)
+                        },
+                        color = NetflixLightGray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 2.sp
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(6.dp))
+
+                // Netflix never set a plain text headline on its billboards: it used
+                // the title's transparent logo art. Text is the fallback only when
+                // TMDB has no logo for the title.
+                if (!item.logoUrl.isNullOrBlank()) {
+                    AsyncImage(
+                        model = item.logoUrl,
+                        contentDescription = item.title,
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .height(if (isPhone) 58.dp else 96.dp),
+                        contentScale = ContentScale.Fit,
+                        alignment = Alignment.CenterStart
+                    )
+                } else {
+                    Text(
+                        text = item.title,
+                        color = NetflixWhite,
+                        fontSize = if (isPhone) 26.sp else 36.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        maxLines = 2,
+                        overflow = TextOverflow.Ellipsis
+                    )
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.label_match, item.matchPercentage),
+                        color = NetflixGreenMatch,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                    Spacer(modifier = Modifier.width(8.dp))
+                    Text(
+                        text = item.releaseYear,
+                        color = NetflixLightGray,
+                        fontSize = 12.sp
+                    )
+                    if (item.contentRating.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BadgeTag(text = item.contentRating)
+                    }
+                    if (item.durationOrSeasons.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        Text(
+                            text = item.durationOrSeasons,
+                            color = NetflixLightGray,
+                            fontSize = 12.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(8.dp))
+
+                if (hasOverview) {
+                    // Focusable synopsis, mirroring the detail page. It is the top of
+                    // the feed, so it cancels UP: focus used to fall through to the
+                    // navigation rail from here and strand the viewer there, and OK
+                    // expands the full text in place.
+                    var overviewExpanded by remember(item.id) { mutableStateOf(false) }
+                    var overviewFocused by remember { mutableStateOf(false) }
+                    Box(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .clip(RoundedCornerShape(8.dp))
+                            .background(
+                                if (overviewFocused) NetflixWhite.copy(alpha = 0.12f)
+                                else Color.Transparent
+                            )
+                            .border(
+                                width = if (overviewFocused) 2.dp else 0.dp,
+                                color = if (overviewFocused) NetflixWhite else Color.Transparent,
+                                shape = RoundedCornerShape(8.dp)
+                            )
+                            .onFocusChanged { overviewFocused = it.isFocused }
+                            .focusRequester(overviewFocusRequester)
+                            .focusProperties {
+                                up = FocusRequester.Cancel
+                                down = heroFocusRequester
+                            }
+                            .clickable { overviewExpanded = !overviewExpanded }
+                            .padding(6.dp)
+                    ) {
+                        Text(
+                            text = item.overview,
+                            color = NetflixLightGray,
+                            fontSize = 12.sp,
+                            maxLines = if (overviewExpanded) Int.MAX_VALUE else if (isPhone) 2 else 3,
+                            overflow = TextOverflow.Ellipsis,
+                            lineHeight = 16.sp
+                        )
+                    }
+                }
+
+                Spacer(modifier = Modifier.height(14.dp))
+
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Button(
+                        onClick = onPlayClicked,
+                        modifier = Modifier
+                            .focusRequester(heroFocusRequester)
+                            .focusProperties {
+                                up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
+                            }
+                            .touchClickable { onPlayClicked() },
+                        colors = ButtonDefaults.colors(
+                            containerColor = NetflixWhite,
+                            contentColor = NetflixBlack,
+                            focusedContainerColor = NetflixRed,
+                            focusedContentColor = NetflixWhite
+                        ),
+                        shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
+                        contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.PlayArrow,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.action_play),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+
+                    Spacer(modifier = Modifier.width(12.dp))
+
+                    OutlinedButton(
+                        onClick = onInfoClicked,
+                        modifier = Modifier.focusProperties {
+                            // Same guard as Play: without it UP from the billboard
+                            // escaped into the sidebar.
+                            up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
+                        }.touchClickable { onInfoClicked() },
+                        shape = OutlinedButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
+                        border = OutlinedButtonDefaults.border(
+                            border = Border(
+                                BorderStroke(1.dp, NetflixMutedGray),
+                                shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                            ),
+                            focusedBorder = Border(
+                                BorderStroke(1.5.dp, NetflixWhite),
+                                shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                            )
+                        ),
+                        colors = OutlinedButtonDefaults.colors(
+                            containerColor = NetflixDarkSurface.copy(alpha = 0.8f),
+                            contentColor = NetflixWhite,
+                            focusedContainerColor = NetflixWhite.copy(alpha = 0.2f),
+                            focusedContentColor = NetflixWhite
+                        ),
+                        contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
+                    ) {
+                        Icon(
+                            imageVector = Icons.Default.Info,
+                            contentDescription = null,
+                            modifier = Modifier.size(20.dp)
+                        )
+                        Spacer(modifier = Modifier.width(6.dp))
+                        Text(
+                            text = stringResource(R.string.action_more_info),
+                            fontWeight = FontWeight.Bold,
+                            fontSize = 15.sp
+                        )
+                    }
+                }
+            }
+        }
+    }
+}
+
+/**
+ * Phone billboard.
+ *
+ * Netflix's handset layout is centre-aligned and reads top-to-bottom (art, genre
+ * tagline, actions) rather than the 10-foot bottom-left column, so this is a
+ * separate composition instead of a flag on the TV one. Touch only: nothing here
+ * is a focus target, which is also why the phone hero can never strand D-pad
+ * focus the way the TV hero could.
+ */
+@Composable
+private fun PhoneHeroContent(
+    item: MediaItem,
+    onPlayClicked: () -> Unit,
+    onInfoClicked: () -> Unit,
+    modifier: Modifier = Modifier
+) {
+    Box(modifier = modifier) {
+        // Soft scrim so the top chrome (logo / search / profile) stays readable.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
                     Brush.verticalGradient(
-                        colors = listOf(
-                            Color.Transparent,
-                            NetflixBlack.copy(alpha = 0.5f),
-                            NetflixBlack
-                        ),
-                        startY = 100f
+                        colorStops = arrayOf(
+                            0f to Color.Black.copy(alpha = 0.6f),
+                            0.5f to Color.Transparent
+                        )
                     )
                 )
         )
 
+        // Long fade that blends the artwork into the first shelf.
         Box(
             modifier = Modifier
                 .fillMaxSize()
                 .background(
-                    Brush.horizontalGradient(
-                        colors = listOf(
-                            NetflixBlack.copy(alpha = 0.9f),
-                            NetflixBlack.copy(alpha = 0.4f),
-                            Color.Transparent
-                        ),
-                        endX = 800f
+                    Brush.verticalGradient(
+                        colorStops = arrayOf(
+                            0.5f to Color.Transparent,
+                            1f to NetflixBlack
+                        )
                     )
                 )
         )
 
         Column(
             modifier = Modifier
-                .align(Alignment.BottomStart)
-                .padding(start = startPadding, bottom = 18.dp, end = endPadding),
-            verticalArrangement = Arrangement.Bottom
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(start = 16.dp, end = 16.dp, bottom = 16.dp),
+            horizontalAlignment = Alignment.CenterHorizontally
         ) {
-            // "N SERIES" eyebrow, exactly where Netflix puts it: above the logo.
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Image(
                     painter = painterResource(R.drawable.logo_flick),
@@ -496,174 +760,78 @@ fun HeroSection(
 
             Spacer(modifier = Modifier.height(6.dp))
 
-            // Netflix never set a plain text headline on its billboards: it used
-            // the title's transparent logo art. Text is the fallback only when
-            // TMDB has no logo for the title.
             if (!item.logoUrl.isNullOrBlank()) {
                 AsyncImage(
                     model = item.logoUrl,
                     contentDescription = item.title,
                     modifier = Modifier
-                        .fillMaxWidth()
-                        .height(if (isPhone) 58.dp else 96.dp),
+                        .fillMaxWidth(0.7f)
+                        .height(52.dp),
                     contentScale = ContentScale.Fit,
-                    alignment = Alignment.CenterStart
+                    alignment = Alignment.Center
                 )
             } else {
                 Text(
                     text = item.title,
                     color = NetflixWhite,
-                    fontSize = if (isPhone) 26.sp else 36.sp,
+                    fontSize = 26.sp,
                     fontWeight = FontWeight.ExtraBold,
                     maxLines = 2,
-                    overflow = TextOverflow.Ellipsis
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
             }
 
             Spacer(modifier = Modifier.height(8.dp))
 
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            // The spec's bullet-separated genre tagline; the metadata row is the
+            // fallback for titles TMDB gave no genres.
+            if (item.genres.isNotEmpty()) {
                 Text(
-                    text = stringResource(R.string.label_match, item.matchPercentage),
-                    color = NetflixGreenMatch,
-                    fontSize = 12.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = item.releaseYear,
+                    text = item.genres.take(4).joinToString(" \u2022 "),
                     color = NetflixLightGray,
-                    fontSize = 12.sp
+                    fontSize = 12.sp,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    textAlign = TextAlign.Center
                 )
-                if (item.contentRating.isNotBlank()) {
-                    Spacer(modifier = Modifier.width(8.dp))
-                    BadgeTag(text = item.contentRating)
-                }
-                if (item.durationOrSeasons.isNotBlank()) {
+            } else {
+                Row(verticalAlignment = Alignment.CenterVertically) {
+                    Text(
+                        text = stringResource(R.string.label_match, item.matchPercentage),
+                        color = NetflixGreenMatch,
+                        fontSize = 12.sp,
+                        fontWeight = FontWeight.Bold
+                    )
                     Spacer(modifier = Modifier.width(8.dp))
                     Text(
-                        text = item.durationOrSeasons,
+                        text = item.releaseYear,
                         color = NetflixLightGray,
                         fontSize = 12.sp
                     )
+                    if (item.contentRating.isNotBlank()) {
+                        Spacer(modifier = Modifier.width(8.dp))
+                        BadgeTag(text = item.contentRating)
+                    }
                 }
             }
 
-            Spacer(modifier = Modifier.height(8.dp))
+            Spacer(modifier = Modifier.height(16.dp))
 
-            if (hasOverview) {
-                // Focusable synopsis, mirroring the detail page. It is the top of
-                // the feed, so it cancels UP: focus used to fall through to the
-                // navigation rail from here and strand the viewer there, and OK
-                // expands the full text in place.
-                var overviewExpanded by remember(item.id) { mutableStateOf(false) }
-                var overviewFocused by remember { mutableStateOf(false) }
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clip(RoundedCornerShape(8.dp))
-                        .background(
-                            if (overviewFocused) NetflixWhite.copy(alpha = 0.12f)
-                            else Color.Transparent
-                        )
-                        .border(
-                            width = if (overviewFocused) 2.dp else 0.dp,
-                            color = if (overviewFocused) NetflixWhite else Color.Transparent,
-                            shape = RoundedCornerShape(8.dp)
-                        )
-                        .onFocusChanged { overviewFocused = it.isFocused }
-                        .focusRequester(overviewFocusRequester)
-                        .focusProperties {
-                            up = FocusRequester.Cancel
-                            down = heroFocusRequester
-                        }
-                        .clickable { overviewExpanded = !overviewExpanded }
-                        .padding(6.dp)
-                ) {
-                    Text(
-                        text = item.overview,
-                        color = NetflixLightGray,
-                        fontSize = 12.sp,
-                        maxLines = if (overviewExpanded) Int.MAX_VALUE else if (isPhone) 2 else 3,
-                        overflow = TextOverflow.Ellipsis,
-                        lineHeight = 16.sp
-                    )
-                }
-            }
-
-            Spacer(modifier = Modifier.height(14.dp))
-
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Button(
+            Row(
+                horizontalArrangement = Arrangement.spacedBy(20.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                MobilePrimaryButton(
+                    label = stringResource(R.string.action_play),
                     onClick = onPlayClicked,
-                    modifier = Modifier
-                        .focusRequester(heroFocusRequester)
-                        .focusProperties {
-                            up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
-                        }
-                        .touchClickable { onPlayClicked() },
-                    colors = ButtonDefaults.colors(
-                        containerColor = NetflixWhite,
-                        contentColor = NetflixBlack,
-                        focusedContainerColor = NetflixRed,
-                        focusedContentColor = NetflixWhite
-                    ),
-                    shape = ButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
-                    contentPadding = PaddingValues(horizontal = 20.dp, vertical = 10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.action_play),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
-
-                Spacer(modifier = Modifier.width(12.dp))
-
-                OutlinedButton(
-                    onClick = onInfoClicked,
-                    modifier = Modifier.focusProperties {
-                        // Same guard as Play: without it UP from the billboard
-                        // escaped into the sidebar.
-                        up = if (hasOverview) overviewFocusRequester else FocusRequester.Cancel
-                    }.touchClickable { onInfoClicked() },
-                    shape = OutlinedButtonDefaults.shape(RoundedCornerShape(NetflixDimens.CardRadius)),
-                    border = OutlinedButtonDefaults.border(
-                        border = Border(
-                            BorderStroke(1.dp, NetflixMutedGray),
-                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
-                        ),
-                        focusedBorder = Border(
-                            BorderStroke(1.5.dp, NetflixWhite),
-                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
-                        )
-                    ),
-                    colors = OutlinedButtonDefaults.colors(
-                        containerColor = NetflixDarkSurface.copy(alpha = 0.8f),
-                        contentColor = NetflixWhite,
-                        focusedContainerColor = NetflixWhite.copy(alpha = 0.2f),
-                        focusedContentColor = NetflixWhite
-                    ),
-                    contentPadding = PaddingValues(horizontal = 16.dp, vertical = 10.dp)
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.Info,
-                        contentDescription = null,
-                        modifier = Modifier.size(20.dp)
-                    )
-                    Spacer(modifier = Modifier.width(6.dp))
-                    Text(
-                        text = stringResource(R.string.action_more_info),
-                        fontWeight = FontWeight.Bold,
-                        fontSize = 15.sp
-                    )
-                }
+                    height = 36.dp
+                )
+                MobileHeroActionButton(
+                    label = stringResource(R.string.action_more_info),
+                    icon = Icons.Default.Info,
+                    onClick = onInfoClicked
+                )
             }
         }
     }
@@ -794,107 +962,15 @@ fun MediaCard(
     rank: Int? = null,
     originalBadge: Boolean = false
 ) {
-    var isFocused by remember { mutableStateOf(false) }
-    val scaleAnim by animateFloatAsState(
-        targetValue = if (isFocused) NetflixDimens.CardFocusScale else 1f,
-        // A short tween instead of the default spring: the spring's ~400ms settle
-        // read as sluggish focus movement on a low-RAM TV box.
-        animationSpec = tween(durationMillis = 120),
-        label = "cardScale"
+    NetflixPosterCard(
+        posterUrl = item.fullPosterUrl,
+        title = item.title,
+        onClick = onClick,
+        modifier = modifier,
+        cardWidth = cardWidth,
+        rank = rank,
+        originalBadge = originalBadge
     )
-
-    // The focus target is the OUTER box, whose layout bounds never change. The
-    // scale lives on an inner graphicsLayer and is read inside the layer block,
-    // so a focus change repaints the card on the draw phase: no re-measure of the
-    // row and, more importantly, no 5% growth of the focus node's bounds. Growing
-    // bounds on focus made the scroll container re-centre by a few pixels on every
-    // Left/Right, which read as the screen jittering vertically (N8).
-    Box(
-        modifier = modifier
-            .then(
-                if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth()
-            )
-            .aspectRatio(2f / 3f)
-            .onFocusChanged { isFocused = it.isFocused }
-            .clickable { onClick() }
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxSize()
-                .graphicsLayer {
-                    scaleX = scaleAnim
-                    scaleY = scaleAnim
-                }
-                .clip(RoundedCornerShape(NetflixDimens.CardRadius))
-                .background(NetflixCardSurface)
-                .border(
-                    width = if (isFocused) NetflixDimens.CardFocusBorder else 0.dp,
-                    color = if (isFocused) NetflixWhite else Color.Transparent,
-                    shape = RoundedCornerShape(NetflixDimens.CardRadius)
-                )
-        ) {
-            AsyncImage(
-                model = item.fullPosterUrl,
-                contentDescription = item.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            // Contrast gradient only where there is bottom text to keep legible (the
-            // rank). Items that only carry the top badge do not need it (H1).
-            if (rank != null) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxSize()
-                        .background(
-                            Brush.verticalGradient(
-                                colors = listOf(
-                                    Color.Transparent,
-                                    Color.Transparent,
-                                    NetflixBlack.copy(alpha = 0.9f)
-                                )
-                            )
-                        )
-                )
-            }
-
-            if (originalBadge) {
-                Image(
-                    painter = painterResource(R.drawable.logo_flick),
-                    contentDescription = stringResource(R.string.label_series),
-                    modifier = Modifier
-                        .align(Alignment.TopStart)
-                        .padding(start = 6.dp, top = 4.dp)
-                        .size(16.dp)
-                )
-            }
-
-            if (rank != null) {
-                Column(
-                    modifier = Modifier
-                        .align(Alignment.BottomStart)
-                        .padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
-                ) {
-                    Text(
-                        text = stringResource(
-                            if (rank <= 10) R.string.badge_top_10 else R.string.badge_top_250
-                        ),
-                        color = NetflixWhite.copy(alpha = 0.85f),
-                        fontSize = 9.sp,
-                        fontWeight = FontWeight.Bold,
-                        letterSpacing = 1.5.sp
-                    )
-                    Text(
-                        text = "$rank",
-                        color = NetflixWhite,
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Black,
-                        lineHeight = 42.sp
-                    )
-                }
-            }
-        }
-    }
 }
 
 @Composable

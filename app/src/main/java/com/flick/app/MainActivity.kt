@@ -15,10 +15,8 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.focusGroup
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
-import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
-import androidx.compose.ui.unit.dp
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
@@ -269,6 +267,7 @@ fun MainAppContent(
     val traktClientSecret by settingsDataStore.traktClientSecret.collectAsState(initial = "")
     val traktUsername by traktRepository.traktUsername.collectAsState(initial = null)
     val savedWatchlist by mediaRepository.getWatchlistItems().collectAsState(initial = emptyList())
+    val searchHistory by settingsDataStore.searchHistory.collectAsState(initial = emptyList())
 
     var traktDeviceCode by remember { mutableStateOf<String?>(null) }
     var traktVerificationUrl by remember { mutableStateOf<String?>(null) }
@@ -806,7 +805,17 @@ fun MainAppContent(
                             searchQuery = searchQuery,
                             onQueryChange = { searchQuery = it },
                             searchResults = searchResults,
-                            onMediaSelected = { selectedMediaItem = it }
+                            onMediaSelected = { item ->
+                                selectedMediaItem = item
+                                // Record only committed searches (opened results),
+                                // never half-typed queries.
+                                if (searchQuery.isNotBlank()) {
+                                    coroutineScope.launch {
+                                        settingsDataStore.addSearchHistory(searchQuery)
+                                    }
+                                }
+                            },
+                            searchHistory = searchHistory
                         )
                     }
 

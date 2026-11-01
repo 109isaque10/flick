@@ -3,7 +3,10 @@ package com.flick.app.ui.search
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.focusable
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
+import androidx.compose.foundation.lazy.LazyRow
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -30,9 +33,8 @@ import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Backspace
 import androidx.compose.material.icons.filled.Clear
+import androidx.compose.material.icons.filled.History
 import androidx.compose.material.icons.filled.Search
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.ExperimentalTvMaterial3Api
 import androidx.tv.material3.Icon
 import androidx.tv.material3.IconButton
@@ -46,6 +48,7 @@ import androidx.compose.runtime.setValue
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.focus.onFocusChanged
@@ -59,11 +62,13 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextAlign
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.flick.app.R
 import com.flick.app.data.model.MediaItem
-import com.flick.app.ui.home.PosterCard
+import com.flick.app.ui.components.NetflixCleanPosterCard
+import com.flick.app.ui.components.NetflixSelectionButton
 import com.flick.app.ui.theme.NetflixBlack
 import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.theme.NetflixBorderHighlight
@@ -82,6 +87,7 @@ fun SearchScreen(
     onQueryChange: (String) -> Unit,
     searchResults: List<MediaItem>,
     onMediaSelected: (MediaItem) -> Unit,
+    searchHistory: List<String> = emptyList(),
     modifier: Modifier = Modifier
 ) {
     val isMobile = isCompactScreen()
@@ -181,6 +187,27 @@ fun SearchScreen(
                 }
             }
 
+            // Recent searches — mobile counterpart of the TV rail's quick items.
+            // Hidden as soon as the box has content so results take over.
+            if (searchQuery.isEmpty() && searchHistory.isNotEmpty()) {
+                Spacer(modifier = Modifier.height(16.dp))
+                Text(
+                    text = stringResource(R.string.search_recent_header),
+                    color = NetflixLightGray,
+                    fontSize = 11.sp,
+                    fontWeight = FontWeight.Bold,
+                    modifier = Modifier.padding(bottom = 8.dp)
+                )
+                LazyRow(
+                    horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    contentPadding = PaddingValues(vertical = 2.dp)
+                ) {
+                    items(searchHistory, key = { it }) { entry ->
+                        MobileSearchHistoryChip(label = entry, onClick = { onQueryChange(entry) })
+                    }
+                }
+            }
+
             Spacer(modifier = Modifier.height(18.dp))
 
             if (searchResults.isNotEmpty()) {
@@ -193,7 +220,7 @@ fun SearchScreen(
                     contentPadding = PaddingValues(bottom = 32.dp)
                 ) {
                     itemsIndexed(distinctResults, key = { _, item -> "${item.mediaType}_${item.id}" }) { _, item ->
-                        PosterCard(item = item, onClick = { onMediaSelected(item) }, cardWidth = null)
+                        NetflixCleanPosterCard(posterUrl = item.fullPosterUrl, title = item.title, onClick = { onMediaSelected(item) }, posterWidth = null)
                     }
                 }
             } else {
@@ -242,11 +269,17 @@ fun SearchScreen(
                 .background(NetflixBlack)
                 .padding(start = 24.dp, top = 20.dp, end = 24.dp, bottom = 20.dp)
         ) {
-            // Left TV Keyboard & Search Bar Pane
+            // Left TV rail: D-pad on-screen keyboard.
+            //
+            // Spec: 280dp rail, six keys per row, spacebar and backspace on their
+            // own control row, and a focused key that is solid white with bold
+            // black text. Keys are chunked to six per row rather than using the
+            // old staggered QWERTY matrix so every key lines up vertically.
             Column(
                 modifier = Modifier
-                    .width(320.dp)
+                    .width(280.dp)
                     .fillMaxHeight()
+                    .verticalScroll(rememberScrollState())
             ) {
                 Text(
                     text = stringResource(R.string.search_press_up),
@@ -255,17 +288,16 @@ fun SearchScreen(
                     modifier = Modifier.padding(bottom = 4.dp)
                 )
 
-                // TV Search Query Display Bar
                 var isSearchFocused by remember { mutableStateOf(false) }
                 Row(
                     modifier = Modifier
                         .fillMaxWidth()
                         .height(44.dp)
-                        .background(NetflixDarkSurface, RoundedCornerShape(NetflixDimens.CardRadius))
+                        .background(NetflixDarkSurface, RoundedCornerShape(4.dp))
                         .border(
                             width = if (isSearchFocused) 2.dp else 1.dp,
                             color = if (isSearchFocused) NetflixBorderHighlight else Color.White.copy(alpha = 0.2f),
-                            shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                            shape = RoundedCornerShape(4.dp)
                         )
                         .onFocusChanged { isSearchFocused = it.isFocused }
                         // No-op click makes the bar a D-pad focus target so the
@@ -314,45 +346,96 @@ fun SearchScreen(
                     }
                 }
 
-                Spacer(modifier = Modifier.height(14.dp))
+                Spacer(modifier = Modifier.height(10.dp))
 
-                // QWERTY TV keyboard laid out as a Netflix-style matrix: every row
-                // shares the same column count, so keys line up vertically instead
-                // of being staggered with per-row insets.
-                val keyboardRows = listOf(
-                    listOf("Q", "W", "E", "R", "T", "Y", "U", "I", "O", "P"),
-                    listOf("A", "S", "D", "F", "G", "H", "J", "K", "L"),
-                    listOf("Z", "X", "C", "V", "B", "N", "M"),
-                    listOf("1", "2", "3", "4", "5", "6", "7", "8", "9", "0")
-                )
-                val keyboardColumnCount = 10
-                val keyHeight = 40.dp
                 val keyShape = RoundedCornerShape(4.dp)
+                val keyboardRows = remember {
+                    ("abcdefghijklmnopqrstuvwxyz" + "1234567890").chunked(6)
+                }
 
                 Column(
-                    modifier = Modifier.fillMaxWidth(),
-                    verticalArrangement = Arrangement.spacedBy(6.dp)
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(NetflixBlack, RoundedCornerShape(4.dp))
+                        .padding(8.dp),
+                    verticalArrangement = Arrangement.spacedBy(4.dp)
                 ) {
+                    // Top control row: wide spacebar, then backspace.
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(4.dp)
+                    ) {
+                        var isSpaceFocused by remember { mutableStateOf(false) }
+                        Box(
+                            modifier = Modifier
+                                .weight(2f)
+                                .height(40.dp)
+                                .background(if (isSpaceFocused) NetflixWhite else NetflixDarkSurface, keyShape)
+                                .border(
+                                    width = if (isSpaceFocused) 2.dp else 1.dp,
+                                    color = if (isSpaceFocused) NetflixWhite else Color.White.copy(alpha = 0.1f),
+                                    shape = keyShape
+                                )
+                                .onFocusChanged { isSpaceFocused = it.isFocused }
+                                .clickable { onQueryChange("$searchQuery ") },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Text(
+                                text = stringResource(R.string.search_space),
+                                color = if (isSpaceFocused) NetflixBlack else NetflixWhite,
+                                fontSize = 12.sp,
+                                fontWeight = FontWeight.Bold
+                            )
+                        }
+
+                        var isBackspaceFocused by remember { mutableStateOf(false) }
+                        Box(
+                            modifier = Modifier
+                                .weight(1f)
+                                .height(40.dp)
+                                .background(if (isBackspaceFocused) NetflixWhite else NetflixDarkSurface, keyShape)
+                                .border(
+                                    width = if (isBackspaceFocused) 2.dp else 1.dp,
+                                    color = if (isBackspaceFocused) NetflixWhite else Color.White.copy(alpha = 0.1f),
+                                    shape = keyShape
+                                )
+                                .onFocusChanged { isBackspaceFocused = it.isFocused }
+                                .clickable {
+                                    if (searchQuery.isNotEmpty()) {
+                                        onQueryChange(searchQuery.dropLast(1))
+                                    }
+                                },
+                            contentAlignment = Alignment.Center
+                        ) {
+                            Icon(
+                                imageVector = Icons.Default.Backspace,
+                                contentDescription = stringResource(R.string.close),
+                                tint = if (isBackspaceFocused) NetflixBlack else NetflixWhite,
+                                modifier = Modifier.size(16.dp)
+                            )
+                        }
+                    }
+
                     keyboardRows.forEachIndexed { rowIndex, rowKeys ->
                         Row(
                             modifier = Modifier.fillMaxWidth(),
-                            horizontalArrangement = Arrangement.spacedBy(6.dp)
+                            horizontalArrangement = Arrangement.spacedBy(4.dp)
                         ) {
                             rowKeys.forEachIndexed { keyIndex, charKey ->
                                 var isKeyFocused by remember { mutableStateOf(false) }
                                 Box(
                                     modifier = Modifier
                                         .weight(1f)
-                                        .height(keyHeight)
-                                        .background(
-                                            if (isKeyFocused) Color.White.copy(alpha = 0.25f) else NetflixDarkSurface,
-                                            keyShape
-                                        )
+                                        .height(40.dp)
+                                        .background(if (isKeyFocused) NetflixWhite else NetflixDarkSurface, keyShape)
                                         .border(
                                             width = if (isKeyFocused) 2.dp else 1.dp,
-                                            color = if (isKeyFocused) NetflixBorderHighlight else Color.White.copy(alpha = 0.1f),
+                                            color = if (isKeyFocused) NetflixWhite else Color.White.copy(alpha = 0.1f),
                                             shape = keyShape
                                         )
+                                        // Exactly one node carries the requester, so
+                                        // D-pad typing can begin without a trip to
+                                        // the sidebar.
                                         .then(
                                             if (rowIndex == 0 && keyIndex == 0) {
                                                 Modifier.focusRequester(keyboardFocusRequester)
@@ -361,93 +444,46 @@ fun SearchScreen(
                                             }
                                         )
                                         .onFocusChanged { isKeyFocused = it.isFocused }
-                                        .clickable { onQueryChange(searchQuery + charKey.lowercase()) },
+                                        .clickable { onQueryChange(searchQuery + charKey) },
                                     contentAlignment = Alignment.Center
                                 ) {
                                     Text(
-                                        text = charKey,
-                                        color = NetflixWhite,
+                                        text = charKey.toString(),
+                                        color = if (isKeyFocused) NetflixBlack else NetflixWhite,
                                         fontSize = 14.sp,
                                         fontWeight = FontWeight.Bold
                                     )
                                 }
                             }
-                            repeat(keyboardColumnCount - rowKeys.size) {
+                            repeat(6 - rowKeys.length) {
                                 Spacer(modifier = Modifier.weight(1f))
                             }
                         }
                     }
                 }
 
-                Spacer(modifier = Modifier.height(10.dp))
-
-                // Space, Backspace, Clear buttons Row
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp)
-                ) {
-                    Button(
-                        onClick = { onQueryChange("$searchQuery ") },
-                        colors = ButtonDefaults.colors(
-                            containerColor = NetflixDarkSurface,
-                            contentColor = NetflixWhite,
-                            focusedContainerColor = NetflixWhite,
-                            focusedContentColor = NetflixBlack
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .height(38.dp)
-                            .touchClickable { onQueryChange("$searchQuery ") }
+                // Quick items: recent searches, in a column below the key grid.
+                // D-pad DOWN from the last key row lands here naturally.
+                if (searchHistory.isNotEmpty()) {
+                    Spacer(modifier = Modifier.height(16.dp))
+                    Text(
+                        text = stringResource(R.string.search_recent_header),
+                        color = NetflixLightGray,
+                        fontSize = 11.sp,
+                        fontWeight = FontWeight.Bold,
+                        modifier = Modifier.padding(bottom = 8.dp)
+                    )
+                    Column(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalArrangement = Arrangement.spacedBy(4.dp)
                     ) {
-                        Text(
-                            text = stringResource(R.string.search_space),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
-                    }
-
-                    val backspace: () -> Unit = {
-                        if (searchQuery.isNotEmpty()) {
-                            onQueryChange(searchQuery.dropLast(1))
+                        searchHistory.forEach { entry ->
+                            NetflixSelectionButton(
+                                label = entry,
+                                onClick = { onQueryChange(entry) },
+                                modifier = Modifier.fillMaxWidth()
+                            )
                         }
-                    }
-                    Button(
-                        onClick = backspace,
-                        colors = ButtonDefaults.colors(
-                            containerColor = NetflixDarkSurface,
-                            contentColor = NetflixWhite,
-                            focusedContainerColor = NetflixWhite,
-                            focusedContentColor = NetflixBlack
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                        modifier = Modifier
-                            .weight(1.2f)
-                            .height(38.dp)
-                            .touchClickable(onClick = backspace)
-                    ) {
-                        Icon(Icons.Default.Backspace, contentDescription = "Backspace", modifier = Modifier.size(16.dp))
-                    }
-
-                    Button(
-                        onClick = { onQueryChange("") },
-                        colors = ButtonDefaults.colors(
-                            containerColor = NetflixDarkSurface,
-                            contentColor = NetflixWhite,
-                            focusedContainerColor = NetflixWhite,
-                            focusedContentColor = NetflixBlack
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(38.dp)
-                            .touchClickable { onQueryChange("") }
-                    ) {
-                        Text(
-                            text = stringResource(R.string.search_clear),
-                            fontSize = 12.sp,
-                            fontWeight = FontWeight.Bold
-                        )
                     }
                 }
             }
@@ -471,7 +507,7 @@ fun SearchScreen(
                         modifier = Modifier.fillMaxSize()
                     ) {
                         itemsIndexed(distinctResults, key = { _, item -> "${item.mediaType}_${item.id}" }) { _, item ->
-                            PosterCard(item = item, onClick = { onMediaSelected(item) }, cardWidth = null)
+                            NetflixCleanPosterCard(posterUrl = item.fullPosterUrl, title = item.title, onClick = { onMediaSelected(item) }, posterWidth = null)
                         }
                     }
                 } else {
@@ -495,3 +531,44 @@ fun SearchScreen(
         }
     }
 }
+
+/**
+ * Recent-search chip for the mobile layout. Unlike the TV quick items these are
+ * touch targets, so they carry a visible surface instead of relying on focus.
+ */
+@Composable
+private fun MobileSearchHistoryChip(
+    label: String,
+    onClick: () -> Unit
+) {
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .clip(RoundedCornerShape(NetflixDimens.CardRadius))
+            .background(NetflixCardSurface)
+            .border(
+                width = 1.dp,
+                color = NetflixLightGray.copy(alpha = 0.25f),
+                shape = RoundedCornerShape(NetflixDimens.CardRadius)
+            )
+            .clickable(onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 8.dp)
+    ) {
+        Icon(
+            imageVector = Icons.Default.History,
+            contentDescription = null,
+            tint = NetflixLightGray,
+            modifier = Modifier.size(14.dp)
+        )
+        Spacer(modifier = Modifier.width(6.dp))
+        Text(
+            text = label,
+            color = NetflixWhite,
+            fontSize = 13.sp,
+            fontWeight = FontWeight.Medium,
+            maxLines = 1,
+            overflow = TextOverflow.Ellipsis
+        )
+    }
+}
+

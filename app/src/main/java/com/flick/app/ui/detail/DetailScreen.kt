@@ -16,7 +16,6 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
@@ -30,7 +29,6 @@ import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.lazy.rememberLazyListState
 import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -47,12 +45,8 @@ import androidx.compose.material.icons.filled.Replay
 
 import androidx.compose.material3.DropdownMenu
 import androidx.compose.material3.DropdownMenuItem
-import androidx.tv.material3.Button
-import androidx.tv.material3.ButtonDefaults
 import androidx.tv.material3.Icon
 import androidx.tv.material3.IconButton
-import androidx.tv.material3.OutlinedButton
-import androidx.tv.material3.OutlinedButtonDefaults
 import androidx.tv.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -86,7 +80,12 @@ import com.flick.app.R
 import com.flick.app.data.model.EpisodeModel
 import com.flick.app.data.model.MediaItem
 import com.flick.app.data.model.SeasonModel
+import com.flick.app.ui.components.MobilePrimaryButton
+import com.flick.app.ui.components.MobileSecondaryButton
+import com.flick.app.ui.components.NetflixEpisodeThumbnailCard
+import com.flick.app.ui.components.NetflixSelectionButton
 import com.flick.app.ui.components.TvSpinner
+import com.flick.app.ui.components.railFullBleed
 import com.flick.app.ui.components.touchClickable
 import com.flick.app.ui.home.BadgeTag
 import com.flick.app.ui.theme.NetflixBlack
@@ -339,109 +338,28 @@ private fun MobileDetailContent(
                         }
                     }
 
-                    Button(
+                    MobilePrimaryButton(
+                        label = playText,
                         onClick = playAction,
-                        colors = ButtonDefaults.colors(
-                            containerColor = NetflixWhite,
-                            contentColor = NetflixBlack
-                        ),
-                        shape = ButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                        contentPadding = PaddingValues(0.dp),
-                        modifier = Modifier
-                            .weight(1.6f)
-                            .height(42.dp)
-                            .touchClickable(onClick = playAction)
-                    ) {
-                        Box(
-                            modifier = Modifier.fillMaxSize(),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.Center,
-                                modifier = Modifier.fillMaxWidth()
-                            ) {
-                                Icon(
-                                    imageVector = Icons.Default.PlayArrow,
-                                    contentDescription = stringResource(R.string.action_play),
-                                    modifier = Modifier.size(22.dp)
-                                )
-                                Spacer(modifier = Modifier.width(6.dp))
-                                Text(
-                                    text = playText,
-                                    fontWeight = FontWeight.Bold,
-                                    fontSize = 15.sp
-                                )
-                            }
-
-                            if (watchProgress > 0f) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.BottomCenter)
-                                        .fillMaxWidth()
-                                        .height(3.5.dp)
-                                        .clip(RoundedCornerShape(bottomStart = 4.dp, bottomEnd = 4.dp))
-                                        .background(NetflixLightGray.copy(alpha = 0.35f))
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .fillMaxWidth(watchProgress.coerceIn(0f, 1f))
-                                            .fillMaxHeight()
-                                            .background(NetflixRed)
-                                    )
-                                }
-                            }
-                        }
-                    }
+                        progress = watchProgress,
+                        modifier = Modifier.weight(1.6f)
+                    )
 
                     Spacer(modifier = Modifier.width(12.dp))
 
-                    OutlinedButton(
+                    MobileSecondaryButton(
+                        label = stringResource(R.string.action_my_list),
                         onClick = onToggleWatchlist,
-                        colors = OutlinedButtonDefaults.colors(
-                            containerColor = NetflixDarkSurface.copy(alpha = 0.7f),
-                            contentColor = NetflixWhite
-                        ),
-                        shape = OutlinedButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                        contentPadding = PaddingValues(horizontal = 10.dp),
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(42.dp)
-                            .touchClickable(onClick = onToggleWatchlist)
-                    ) {
-                        Icon(
-                            imageVector = if (isWatchlisted) Icons.Default.Check else Icons.Default.Add,
-                            contentDescription = stringResource(R.string.nav_my_list),
-                            modifier = Modifier.size(18.dp)
-                        )
-                        Spacer(modifier = Modifier.width(6.dp))
-                        Text(
-                            text = stringResource(R.string.action_my_list),
-                            fontWeight = FontWeight.Bold,
-                            fontSize = 13.sp,
-                            maxLines = 1
-                        )
-                    }
+                        icon = if (isWatchlisted) Icons.Default.Check else Icons.Default.Add,
+                        modifier = Modifier.weight(1f)
+                    )
 
                     if (onPlayTrailer != null) {
                         Spacer(modifier = Modifier.width(8.dp))
-                        OutlinedButton(
-                            onClick = onPlayTrailer,
-                            colors = OutlinedButtonDefaults.colors(
-                                containerColor = NetflixDarkSurface.copy(alpha = 0.7f),
-                                contentColor = NetflixWhite
-                            ),
-                            shape = OutlinedButtonDefaults.shape(RoundedCornerShape(4.dp)),
-                            contentPadding = PaddingValues(horizontal = 8.dp),
-                            modifier = Modifier.height(42.dp).touchClickable { onPlayTrailer() }
-                        ) {
-                            Text(
-                                text = stringResource(R.string.label_trailer),
-                                fontWeight = FontWeight.Bold,
-                                fontSize = 12.sp,
-                                maxLines = 1
-                            )
-                        }
+                        MobileSecondaryButton(
+                            label = stringResource(R.string.label_trailer),
+                            onClick = onPlayTrailer
+                        )
                     }
                 }
             }
@@ -703,17 +621,21 @@ private fun TvDetailContent(
                 .background(NetflixBlack)
         ) {
             // The artwork is the page background, not a nested showcase card.
+            // TV: it runs full-bleed so it continues underneath the nav rail.
             AsyncImage(
                 model = mediaItem.fullBackdropUrl ?: mediaItem.fullPosterUrl,
                 contentDescription = mediaItem.title,
-                modifier = Modifier.fillMaxSize(),
+                modifier = Modifier.fillMaxSize().railFullBleed(),
                 contentScale = ContentScale.Crop
             )
 
-            // Left scrim keeps the copy column readable over any artwork.
+            // Left scrim keeps the copy column readable over any artwork. Its
+            // stops are relative to the full screen so it lines up with the
+            // full-bleed artwork instead of stopping at the rail.
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .railFullBleed()
                     .background(
                         Brush.horizontalGradient(
                             colorStops = arrayOf(
@@ -729,6 +651,7 @@ private fun TvDetailContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .railFullBleed()
                     .background(
                         Brush.verticalGradient(
                             colorStops = arrayOf(
@@ -743,6 +666,7 @@ private fun TvDetailContent(
             Box(
                 modifier = Modifier
                     .fillMaxSize()
+                    .railFullBleed()
                     .background(
                         Brush.verticalGradient(
                             colorStops = arrayOf(
@@ -903,7 +827,6 @@ private fun TvDetailContent(
                         }
                     },
                     modifier = Modifier
-                        .widthIn(max = 420.dp)
                         .focusRequester(playFocusRequester)
                 )
 
@@ -1049,57 +972,13 @@ private fun NetflixPrimaryAction(
     onClick: () -> Unit,
     modifier: Modifier = Modifier
 ) {
-    var focused by remember { mutableStateOf(false) }
-    val contentColor = if (focused) NetflixBlack else NetflixWhite
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = modifier
-            .height(52.dp)
-            .background(
-                if (focused) NetflixWhite else Color.Black.copy(alpha = 0.35f),
-                RoundedCornerShape(4.dp)
-            )
-            .border(2.dp, NetflixWhite, RoundedCornerShape(4.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .padding(horizontal = 20.dp)
-    ) {
-        Icon(
-            imageVector = Icons.Default.PlayArrow,
-            contentDescription = null,
-            tint = contentColor,
-            modifier = Modifier.size(26.dp)
-        )
-        Spacer(modifier = Modifier.width(10.dp))
-        Text(
-            text = label,
-            color = contentColor,
-            fontSize = 17.sp,
-            fontWeight = FontWeight.Bold,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-        if (progress > 0f) {
-            Spacer(modifier = Modifier.width(16.dp))
-            Box(
-                modifier = Modifier
-                    .width(72.dp)
-                    .height(4.dp)
-                    .clip(RoundedCornerShape(2.dp))
-                    .background(
-                        if (focused) NetflixBlack.copy(alpha = 0.25f) else NetflixWhite.copy(alpha = 0.35f)
-                    )
-            ) {
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth(progress)
-                        .fillMaxHeight()
-                        .background(NetflixRed)
-                )
-            }
-        }
-    }
+    NetflixSelectionButton(
+        label = label,
+        onClick = onClick,
+        modifier = modifier.fillMaxWidth(),
+        icon = Icons.Default.PlayArrow,
+        progress = progress
+    )
 }
 
 @Composable
@@ -1108,38 +987,12 @@ private fun NetflixSecondaryAction(
     label: String,
     onClick: () -> Unit
 ) {
-    var focused by remember { mutableStateOf(false) }
-
-    Row(
-        verticalAlignment = Alignment.CenterVertically,
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(48.dp)
-            .background(
-                if (focused) Color.White.copy(alpha = 0.10f) else Color.Transparent,
-                RoundedCornerShape(4.dp)
-            )
-            .border(if (focused) 2.dp else 0.dp, NetflixWhite, RoundedCornerShape(4.dp))
-            .onFocusChanged { focused = it.isFocused }
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp)
-    ) {
-        Icon(
-            imageVector = icon,
-            contentDescription = null,
-            tint = NetflixWhite,
-            modifier = Modifier.size(22.dp)
-        )
-        Spacer(modifier = Modifier.width(12.dp))
-        Text(
-            text = label,
-            color = NetflixWhite,
-            fontSize = 15.sp,
-            fontWeight = FontWeight.Medium,
-            maxLines = 1,
-            overflow = TextOverflow.Ellipsis
-        )
-    }
+    NetflixSelectionButton(
+        label = label,
+        onClick = onClick,
+        modifier = Modifier.fillMaxWidth(),
+        icon = icon
+    )
 }
 
 @Composable
@@ -1177,11 +1030,11 @@ fun TvEpisodesView(
             .fillMaxSize()
             .background(NetflixBlack)
     ) {
-        // High-res Background Artwork
+        // High-res Background Artwork (full-bleed under the TV nav rail)
         AsyncImage(
             model = mediaItem.fullBackdropUrl ?: mediaItem.fullPosterUrl,
             contentDescription = mediaItem.title,
-            modifier = Modifier.fillMaxSize(),
+            modifier = Modifier.fillMaxSize().railFullBleed(),
             contentScale = ContentScale.Crop
         )
 
@@ -1189,6 +1042,7 @@ fun TvEpisodesView(
         Box(
             modifier = Modifier
                 .fillMaxSize()
+                .railFullBleed()
                 .background(NetflixBlack.copy(alpha = 0.90f))
         )
 
@@ -1436,67 +1290,30 @@ fun EpisodeCardItem(
         modifier = modifier
             .fillMaxWidth()
             .padding(horizontal = screenPadding, vertical = 3.dp)
-            .clip(RoundedCornerShape(4.dp))
-            .background(if (isFocused) Color.White.copy(alpha = 0.12f) else Color.Transparent)
+            .clip(RoundedCornerShape(2.dp))
+            .background(if (isFocused) NetflixWhite.copy(alpha = 0.15f) else Color.Transparent)
             .border(
                 width = if (isFocused) 2.dp else 0.dp,
                 color = if (isFocused) NetflixWhite else Color.Transparent,
-                shape = RoundedCornerShape(4.dp)
+                shape = RoundedCornerShape(2.dp)
             )
             .onFocusChanged { isFocused = it.isFocused }
             .clickable { onClick() }
             .padding(horizontal = 8.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        Box(
-            modifier = Modifier
-                .width(thumbWidth)
-                .aspectRatio(16f / 9f)
-                .clip(RoundedCornerShape(NetflixDimens.ThumbnailRadius))
-                .background(NetflixDarkSurface)
-        ) {
-            AsyncImage(
-                model = episode.fullStillUrl,
-                contentDescription = episode.title,
-                modifier = Modifier.fillMaxSize(),
-                contentScale = ContentScale.Crop
-            )
-
-            // Netflix only reveals the play affordance on the focused row.
-            if (isFocused) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.Center)
-                        .size(32.dp)
-                        .background(NetflixBlack.copy(alpha = 0.62f), CircleShape),
-                    contentAlignment = Alignment.Center
-                ) {
-                    Icon(
-                        imageVector = Icons.Default.PlayArrow,
-                        contentDescription = stringResource(R.string.action_play),
-                        tint = NetflixWhite,
-                        modifier = Modifier.size(20.dp)
-                    )
-                }
-            }
-
-            if (isWatched || isWatching || progress > 0.01f) {
-                Box(
-                    modifier = Modifier
-                        .align(Alignment.BottomCenter)
-                        .fillMaxWidth()
-                        .height(3.dp)
-                        .background(NetflixLightGray.copy(alpha = 0.3f))
-                ) {
-                    Box(
-                        modifier = Modifier
-                            .fillMaxWidth(if (isWatched) 1f else progress.coerceIn(0f, 1f))
-                            .fillMaxHeight()
-                            .background(NetflixRed)
-                    )
-                }
-            }
-        }
+        // The enclosing row owns focus, so the still is told about it rather
+        // than competing for it; it only contributes the badge and progress.
+        NetflixEpisodeThumbnailCard(
+            stillUrl = episode.fullStillUrl,
+            title = episode.title,
+            seasonNumber = episode.seasonNumber,
+            episodeNumber = episode.episodeNumber,
+            progress = if (isWatched) 1f else progress,
+            thumbnailWidth = thumbWidth,
+            focused = isFocused,
+            showFocusBorder = false
+        )
 
         Spacer(modifier = Modifier.width(12.dp))
 

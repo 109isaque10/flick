@@ -53,6 +53,13 @@
     <string name="title_seasons">Seasons</string>
     <string name="title_cast">Top Cast</string>
     <string name="title_streams">Available Streams</string>
+    <string name="select_stream_title">Select Stream</string>
+    <string name="streams_available_count_format">%1$d streams available from Stremio addon:</string>
+    <string name="no_streams_hint">Check your Stremio Addon URL in Settings or enter a custom stream URL below.</string>
+    <string name="custom_stream_label">Custom stream</string>
+    <string name="custom_stream_placeholder">https://... or magnet:</string>
+    <string name="play_custom_url">Play Custom URL</string>
+    <string name="open_settings">Open Settings</string>
     <string name="season_format">Season %1$d</string>
     <string name="episode_format">E%1$d: %2$s</string>
     <string name="episode_simple">Episode %1$d</string>
@@ -78,6 +85,7 @@
     <string name="search_hint">Search movies, TV shows, or genres...</string>
     <string name="search_no_results">No content found matching \'%1$s\'</string>
     <string name="search_empty_prompt">Search for your favorite movies &amp; TV series</string>
+    <string name="search_recent_header">Recent searches</string>
 
     <!-- Categories Screen -->
     <string name="categories_title">Browse Categories</string>
