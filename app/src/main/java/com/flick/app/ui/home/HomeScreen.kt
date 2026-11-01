@@ -58,6 +58,7 @@ import androidx.compose.ui.draw.scale
 import androidx.compose.ui.focus.onFocusChanged
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.painterResource
@@ -116,6 +117,16 @@ fun HomeScreen(
     val isPhone = isCompactScreen()
     val horizontalPadding =
         if (isPhone) NetflixDimens.RowContentPaddingMobile else NetflixDimens.RowContentPadding
+
+    // One FocusRequester per card, per row. UP/DOWN between rows is routed to the
+    // card at the same index in the neighbouring row instead of being left to the
+    // 2D focus search: a row that is scrolled or simply shorter than the one below
+    // leaves empty space under the beam, and the search then continues upwards
+    // until it hits the hero synopsis box (N7). Requesters are cheap nodes; unlike
+    // per-item `focusProperties` they are never consulted during focus search.
+    val cardRequestersByRow = remember(contentRows) {
+        contentRows.map { row -> List(row.items.size) { FocusRequester() } }
+    }
 
     LazyColumn(
         modifier = modifier
@@ -218,13 +229,23 @@ fun HomeScreen(
                 }
             }
 
-            items(contentRows, key = { it.id }, contentType = { "row" }) { row ->
+            itemsIndexed(
+                contentRows,
+                key = { _, row -> row.id },
+                contentType = { _, _ -> "row" }
+            ) { rowIndex, row ->
                 ContentRowSection(
                     title = row.title,
                     titleRes = row.titleRes,
                     items = row.items,
                     spotlightType = row.spotlightType,
-                    onMediaSelected = onMediaSelected
+                    onMediaSelected = onMediaSelected,
+                    cardRequesters = cardRequestersByRow.getOrNull(rowIndex),
+                    // getOrNull(-1) is null, so the first row keeps its current
+                    // spatial UP: the billboard is directly above it and that path
+                    // already works.
+                    aboveCards = cardRequestersByRow.getOrNull(rowIndex - 1),
+                    belowCards = cardRequestersByRow.getOrNull(rowIndex + 1)
                 )
             }
         }
@@ -671,9 +692,16 @@ fun ContentRowSection(
     items: List<MediaItem>,
     spotlightType: SpotlightType = SpotlightType.NONE,
     onMediaSelected: (MediaItem) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    cardRequesters: List<FocusRequester>? = null,
+    aboveCards: List<FocusRequester>? = null,
+    belowCards: List<FocusRequester>? = null
 ) {
     if (items.isEmpty()) return
+
+    // Index of the card in this row that currently holds focus, or -1. Vertical
+    // navigation uses it to pick the column to land on in the neighbouring row.
+    var focusedIndex by remember { mutableStateOf(-1) }
 
     val isPhone = isCompactScreen()
     val horizontalPadding =
@@ -702,7 +730,23 @@ fun ContentRowSection(
 
         val distinctItems = remember(items) { items.distinctBy { "${it.mediaType}_${it.id}" } }
         LazyRow(
-            modifier = Modifier.focusRestorer(),
+            modifier = Modifier
+                .focusRestorer()
+                // Route UP/DOWN explicitly. The key is consumed only when the
+                // request actually landed on a composed card, so a row whose
+                // neighbour is scrolled away still falls back to the default
+                // spatial move instead of swallowing the press.
+                .onPreviewKeyEvent { event ->
+                    if (event.type != KeyEventType.KeyDown) return@onPreviewKeyEvent false
+                    val targets = when (event.key) {
+                        Key.DirectionUp -> aboveCards
+                        Key.DirectionDown -> belowCards
+                        else -> null
+                    } ?: return@onPreviewKeyEvent false
+                    if (targets.isEmpty() || focusedIndex < 0) return@onPreviewKeyEvent false
+                    val target = targets[focusedIndex.coerceAtMost(targets.lastIndex)]
+                    runCatching { target.requestFocus() }.getOrDefault(false)
+                },
             contentPadding = PaddingValues(horizontal = horizontalPadding),
             horizontalArrangement = Arrangement.spacedBy(NetflixDimens.RowItemSpacing)
         ) {
@@ -714,9 +758,15 @@ fun ContentRowSection(
                 MediaCard(
                     item = item,
                     onClick = { onMediaSelected(item) },
-                    // Reserve the focus-scale overflow so a focused card never
-                    // forces the parent list to re-scroll (vertical jitter).
-                    modifier = Modifier.padding(vertical = NetflixDimens.CardFocusOverflow),
+                    modifier = Modifier
+                        // Reserve the focus-scale overflow so a focused card never
+                        // forces the parent list to re-scroll (vertical jitter).
+                        .padding(vertical = NetflixDimens.CardFocusOverflow)
+                        .onFocusChanged { if (it.isFocused) focusedIndex = index }
+                        .then(
+                            cardRequesters?.getOrNull(index)?.let { Modifier.focusRequester(it) }
+                                ?: Modifier
+                        ),
                     cardWidth = cardWidth,
                     rank = if (spotlightType == SpotlightType.TOP_250) index + 1 else null,
                     originalBadge = spotlightType == SpotlightType.N_SERIES
@@ -744,81 +794,95 @@ fun MediaCard(
         label = "cardScale"
     )
 
+    // The focus target is the OUTER box, whose layout bounds never change. The
+    // scale lives on an inner graphicsLayer and is read inside the layer block,
+    // so a focus change repaints the card on the draw phase: no re-measure of the
+    // row and, more importantly, no 5% growth of the focus node's bounds. Growing
+    // bounds on focus made the scroll container re-centre by a few pixels on every
+    // Left/Right, which read as the screen jittering vertically (N8).
     Box(
         modifier = modifier
             .then(
                 if (cardWidth != null) Modifier.width(cardWidth) else Modifier.fillMaxWidth()
             )
             .aspectRatio(2f / 3f)
-            .scale(scaleAnim)
-            .clip(RoundedCornerShape(NetflixDimens.CardRadius))
-            .background(NetflixCardSurface)
-            .border(
-                width = if (isFocused) NetflixDimens.CardFocusBorder else 0.dp,
-                color = if (isFocused) NetflixWhite else Color.Transparent,
-                shape = RoundedCornerShape(NetflixDimens.CardRadius)
-            )
             .onFocusChanged { isFocused = it.isFocused }
             .clickable { onClick() }
     ) {
-        AsyncImage(
-            model = item.fullPosterUrl,
-            contentDescription = item.title,
-            modifier = Modifier.fillMaxSize(),
-            contentScale = ContentScale.Crop
-        )
+        Box(
+            modifier = Modifier
+                .fillMaxSize()
+                .graphicsLayer {
+                    scaleX = scaleAnim
+                    scaleY = scaleAnim
+                }
+                .clip(RoundedCornerShape(NetflixDimens.CardRadius))
+                .background(NetflixCardSurface)
+                .border(
+                    width = if (isFocused) NetflixDimens.CardFocusBorder else 0.dp,
+                    color = if (isFocused) NetflixWhite else Color.Transparent,
+                    shape = RoundedCornerShape(NetflixDimens.CardRadius)
+                )
+        ) {
+            AsyncImage(
+                model = item.fullPosterUrl,
+                contentDescription = item.title,
+                modifier = Modifier.fillMaxSize(),
+                contentScale = ContentScale.Crop
+            )
 
-        // Contrast gradient only where there is bottom text to keep legible (the
-        // rank). Items that only carry the top badge do not need it (H1).
-        if (rank != null) {
-            Box(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .background(
-                        Brush.verticalGradient(
-                            colors = listOf(
-                                Color.Transparent,
-                                Color.Transparent,
-                                NetflixBlack.copy(alpha = 0.9f)
+            // Contrast gradient only where there is bottom text to keep legible (the
+            // rank). Items that only carry the top badge do not need it (H1).
+            if (rank != null) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(
+                                    Color.Transparent,
+                                    Color.Transparent,
+                                    NetflixBlack.copy(alpha = 0.9f)
+                                )
                             )
                         )
+                )
+            }
+
+            if (originalBadge) {
+                Image(
+                    painter = painterResource(R.drawable.logo_flick),
+                    contentDescription = stringResource(R.string.label_series),
+                    modifier = Modifier
+                        .align(Alignment.TopStart)
+                        .padding(start = 6.dp, top = 4.dp)
+                        .size(16.dp)
+                )
+            }
+
+            if (rank != null) {
+                Column(
+                    modifier = Modifier
+                        .align(Alignment.BottomStart)
+                        .padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
+                ) {
+                    Text(
+                        text = stringResource(
+                            if (rank <= 10) R.string.badge_top_10 else R.string.badge_top_250
+                        ),
+                        color = NetflixWhite.copy(alpha = 0.85f),
+                        fontSize = 9.sp,
+                        fontWeight = FontWeight.Bold,
+                        letterSpacing = 1.5.sp
                     )
-            )
-        }
-
-        if (originalBadge) {
-            Image(
-                painter = painterResource(R.drawable.logo_flick),
-                contentDescription = stringResource(R.string.label_series),
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = 6.dp, top = 4.dp)
-                    .size(16.dp)
-            )
-        }
-
-        if (rank != null) {
-            Column(
-                modifier = Modifier
-                    .align(Alignment.BottomStart)
-                    .padding(start = 8.dp, end = 8.dp, bottom = 6.dp)
-            ) {
-                Text(
-                    text = stringResource(
-                        if (rank <= 10) R.string.badge_top_10 else R.string.badge_top_250
-                    ),
-                    color = NetflixWhite.copy(alpha = 0.85f),
-                    fontSize = 9.sp,
-                    fontWeight = FontWeight.Bold,
-                    letterSpacing = 1.5.sp
-                )
-                Text(
-                    text = "$rank",
-                    color = NetflixWhite,
-                    fontSize = 40.sp,
-                    fontWeight = FontWeight.Black,
-                    lineHeight = 42.sp
-                )
+                    Text(
+                        text = "$rank",
+                        color = NetflixWhite,
+                        fontSize = 40.sp,
+                        fontWeight = FontWeight.Black,
+                        lineHeight = 42.sp
+                    )
+                }
             }
         }
     }
