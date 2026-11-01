@@ -37,8 +37,6 @@ permissions:
 jobs:
   build:
     runs-on: ubuntu-latest
-    outputs:
-      release_tag: ${{ steps.set_tag.outputs.tag }}
     steps:
       # -------------------------------------------------------------
       # 1️⃣ Checkout
@@ -56,17 +54,28 @@ jobs:
         run: |
           # For a manual dispatch we use the explicit inputs.
           # For a tag push we derive the version name from the tag (strip the leading “v”)
+          # and fall back to defaults: github.event.inputs is empty on a tag push, which
+          # left FORMAT blank (so the build took the `else` branch and produced both
+          # formats) and CREATE_RELEASE blank (so the publish step was skipped).
           if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
-            echo "VERSION_NAME=${{ github.event.inputs.version_name }}" >> $GITHUB_ENV
-            echo "VERSION_CODE=${{ github.event.inputs.version_code }}" >> $GITHUB_ENV
+            VERSION_NAME="${{ github.event.inputs.version_name }}"
+            VERSION_CODE="${{ github.event.inputs.version_code }}"
+            FORMAT="${{ github.event.inputs.build_format }}"
+            CREATE_RELEASE="${{ github.event.inputs.create_github_release }}"
           else
-            TAG=${{ github.ref_name }}               # e.g. v1.2.3
-            echo "VERSION_NAME=${TAG#v}" >> $GITHUB_ENV   # strip the “v”
-            echo "VERSION_CODE=${{ github.run_number }}" >> $GITHUB_ENV   # same logic as original
+            TAG=${{ github.ref_name }}                    # e.g. v1.2.3
+            VERSION_NAME="${TAG#v}"                       # strip the “v”
+            VERSION_CODE="${{ github.run_number }}"       # same logic as original
+            FORMAT="both"
+            CREATE_RELEASE="true"
           fi
 
-          echo "FORMAT=${{ github.event.inputs.build_format }}" >> $GITHUB_ENV
-          echo "CREATE_RELEASE=${{ github.event.inputs.create_github_release }}" >> $GITHUB_ENV
+          # Keep the values in shell variables so the log lines below can print them;
+          # writing straight to $GITHUB_ENV alone made every echo print an empty string.
+          echo "VERSION_NAME=$VERSION_NAME" >> $GITHUB_ENV
+          echo "VERSION_CODE=$VERSION_CODE" >> $GITHUB_ENV
+          echo "FORMAT=$FORMAT" >> $GITHUB_ENV
+          echo "CREATE_RELEASE=$CREATE_RELEASE" >> $GITHUB_ENV
 
           echo "Target Version Name: $VERSION_NAME"
           echo "Target Version Code: $VERSION_CODE"
@@ -110,6 +119,11 @@ jobs:
           STORE_PASSWORD: ${{ secrets.RELEASE_STORE_PASSWORD || secrets.STORE_PASSWORD }}
           KEY_PASSWORD: ${{ secrets.RELEASE_KEY_PASSWORD || secrets.KEY_PASSWORD }}
         run: |
+          # The `cp` calls below write into this directory, and a fresh runner
+          # does not have it: without this the step died with
+          # "cp: cannot create regular file 'release-artifacts/...': No such file or directory".
+          mkdir -p release-artifacts
+
           # Choose the Gradle tasks based on the requested format
           if [ "$FORMAT" = "apk" ]; then
             ./gradlew assembleRelease \
