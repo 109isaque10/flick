@@ -128,6 +128,37 @@ fun HomeScreen(
         contentRows.map { row -> List(row.items.size) { FocusRequester() } }
     }
 
+    // The hero's default focus is owned by the screen, not by HeroSection. The
+    // hero is a LazyColumn item, so it is disposed whenever it scrolls out of the
+    // viewport and composed again when it scrolls back into it. A LaunchedEffect
+    // living inside HeroSection therefore ran again on every re-entry and
+    // re-requested focus on the synopsis, so UP from any row below jumped into the
+    // hero instead of moving one row up (N7). Guarded here, once per hero, it can
+    // no longer fire again after the first successful request.
+    val heroFocusRequester = remember { FocusRequester() }
+    val overviewFocusRequester = remember { FocusRequester() }
+    val heroId = heroItem?.id
+    var hasRequestedInitialFocus by remember(heroId) { mutableStateOf(false) }
+    LaunchedEffect(heroId) {
+        if (heroItem == null || hasRequestedInitialFocus) return@LaunchedEffect
+        // Land on the synopsis when the item has one: focusing it is what reveals
+        // the full billboard, so defaulting to Play left the full hero view hidden
+        // on load (D1). Play stays the default when there is no synopsis. Retry
+        // across frames because the hero is not attached on the first composition,
+        // and check the boolean requestFocus() returns: it reports false without
+        // throwing while the node is not ready, so runCatching's flag alone quits
+        // too early and leaves focus on whatever the tree supplied first.
+        val initialFocus =
+            if (heroItem.overview.isNotBlank()) overviewFocusRequester else heroFocusRequester
+        repeat(6) {
+            withFrameNanos { }
+            if (runCatching { initialFocus.requestFocus() }.getOrDefault(false)) {
+                hasRequestedInitialFocus = true
+                return@LaunchedEffect
+            }
+        }
+    }
+
     LazyColumn(
         modifier = modifier
             .fillMaxSize()
@@ -223,6 +254,8 @@ fun HomeScreen(
                 item {
                     HeroSection(
                         item = heroItem,
+                        heroFocusRequester = heroFocusRequester,
+                        overviewFocusRequester = overviewFocusRequester,
                         onPlayClicked = { onPlayClicked(heroItem) },
                         onInfoClicked = { onMediaSelected(heroItem) }
                     )
@@ -366,6 +399,8 @@ fun FilterHeaderChip(
 @Composable
 fun HeroSection(
     item: MediaItem,
+    heroFocusRequester: FocusRequester,
+    overviewFocusRequester: FocusRequester,
     onPlayClicked: () -> Unit,
     onInfoClicked: () -> Unit,
     modifier: Modifier = Modifier
@@ -384,36 +419,10 @@ fun HeroSection(
     val startPadding = if (isPhone) 16.dp else 36.dp
     val endPadding = if (isPhone) 48.dp else 200.dp
 
-    // Netflix opens on content, not chrome. Compose otherwise hands the initial
-    // D-pad focus to the first focusable in the tree, which is the navigation
-    // rail, so the app started with an expanded sidebar instead of Home.
-    //
-    // The anchor is a full-width 1dp strip at the hero's BOTTOM, not its top:
-    //   - DOWN from it resolves straight to the first browse row (it sits above
-    //     the rows but below the Play/Info buttons), so one press reaches a card.
-    //   - UP from the first row resolves back to it instead of the buttons, so
-    //     backing out of the rows does not scroll the hero out of view.
-    // Requesting focus on the Play button directly used to scroll the LazyColumn
-    // until the hero's upper half (and the artwork) left the viewport.
-    val heroFocusRequester = remember { FocusRequester() }
-    val overviewFocusRequester = remember { FocusRequester() }
+    // Netflix opens on content, not chrome: the screen, not this item, requests
+    // the hero's default focus (see HomeScreen), so the request cannot be repeated
+    // every time this item scrolls back into view.
     val hasOverview = item.overview.isNotBlank()
-    // Land on the synopsis when the item has one: focusing it is what reveals the
-    // full billboard, so defaulting to Play left the full hero view hidden on
-    // load (D1). Play stays the default when there is no synopsis. Retry across
-    // frames because the hero is not attached on the first composition, and check
-    // the boolean requestFocus() returns: it reports false without throwing while
-    // the node is not ready, so runCatching's flag alone quits too early and
-    // leaves focus on whatever the tree supplied first.
-    LaunchedEffect(Unit) {
-        val initialFocus = if (hasOverview) overviewFocusRequester else heroFocusRequester
-        repeat(6) {
-            withFrameNanos { }
-            if (runCatching { initialFocus.requestFocus() }.getOrDefault(false)) {
-                return@LaunchedEffect
-            }
-        }
-    }
 
     Box(
         modifier = modifier
